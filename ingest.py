@@ -5,17 +5,15 @@ def load_documents(root: str) -> list[dict]:
     for path in Path(root).rglob("*.md"):
         text = path.read_text(encoding="utf-8")
         docs.append(
-            {"text": text, "source": str(path.relative_to(root)), "topic": str(path)}
+            {"text": text, "source": str(path.relative_to(root)), "topic": path.parent.name}
         )
     return docs
 
 import chromadb as chroma
-from chromadb.utils import embedding_functions
-# 使用BAAI/bge-base-zh-v1.5这个embed模型对doc进行向量化
-ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name= "BAAI/bge-base-zh-v1.5"
-)
-client = chroma.Client()
+from sentence_transformers import SentenceTransformer
+
+# 使用BAAI/bge-base-zh-v1.5这个embed模型对doc进行向量化(与 retriever 保持一致)
+model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
 
 client = chroma.PersistentClient(path="./my_chroma_data")
 # 不存在就创建collection，存在先删除再创建
@@ -94,10 +92,13 @@ for i,d in enumerate(docs):
         chunk_texts.append(chunk)
         chunk_metadatas.append({"source":d["source"],"topic":d["topic"],"chunk_index":j})
 
+chunk_embeddings = model.encode(chunk_texts, normalize_embeddings=True).tolist()
+
 collection.add(
     ids=chunk_ids,
     documents=chunk_texts,
-    metadatas=chunk_metadatas
+    metadatas=chunk_metadatas,
+    embeddings=chunk_embeddings,
 )
 
 print(f"索引完成:{collection.count()}个chunk")
