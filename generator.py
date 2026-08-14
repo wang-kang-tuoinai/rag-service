@@ -2,31 +2,44 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 import os
 
-client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"),base_url="https://api.deepseek.com")
+client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
-PROMPT_TEMPLATE = """你是一个技术文档问答助手。请严格基于下面提供的资料回答问题。
+SYSTEM_PROMPT = """你是一个技术文档问答助手。请严格基于下面提供的资料回答问题。
 
 要求:
 1. 只使用资料中的信息,不要用你自己的知识补充
 2. 如果资料中没有相关信息,直接说"提供的资料中没有相关内容",不要编造
 3. 回答时标注信息来自哪一条资料,格式如 [1]
-
-【资料】
-{context}
-
-【问题】
-{question}
 """
+
 
 def build_context(chunks):
     parts = []
     for i, c in enumerate(chunks, 1):
-        parts.append(f"[{i}] (来自:{c["metadata"]['source']} - {c["metadata"]['topic']})\n{c['document']}")
+        parts.append(f"[{i}] (来自:{c['metadata']['source']} - {c['metadata']['topic']})\n{c['document']}")
     return "\n\n".join(parts)
 
-def generate(question, chunks):
+
+def generate(question, chunks, history=None):
+    """生成回答，history 为之前多轮的 user/assistant 消息列表，用于多轮记忆"""
+    history = history or []
     context = build_context(chunks)
-    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": PROMPT_TEMPLATE.format(
-        context=context, question=question)}]
+    messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages += history
+    messages.append({"role": "user", "content": f"【资料】\n{context}\n\n【问题】\n{question}"})
     resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
     return resp.choices[0].message.content
+
+
+def generate_title(first_message, max_len=20):
+    """根据首条用户消息生成一个简洁的会话标题"""
+    prompt = (
+        f"请为下面的对话起一个简洁的标题（不超过{max_len}个字），"
+        "只返回标题本身，不要加引号或标点符号：\n" + first_message
+    )
+    resp = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    title = (resp.choices[0].message.content or "").strip()
+    return title[:max_len] if title else first_message[:max_len]

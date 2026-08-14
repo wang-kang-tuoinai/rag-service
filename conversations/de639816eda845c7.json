@@ -1,0 +1,32 @@
+{
+  "id": "de639816eda845c7",
+  "title": "联合索引概念解析",
+  "messages": [
+    {
+      "role": "user",
+      "content": "什么是联合索引"
+    },
+    {
+      "role": "assistant",
+      "content": "根据提供的资料，联合索引就是把表中多个列组合在一起当成一个索引，非常适合多个条件的范围查询。比如创建联合索引(a, b, c)，就是先按a排序，a相同再按b排序，b相同再按c排序。最左前缀原则是：要利用联合索引，查询条件中必须包含最左边的列，从左向右匹配；如果没有最左边的列，就走全表扫描。[1]"
+    },
+    {
+      "role": "user",
+      "content": "在项目里，Consumer优雅退出怎么做"
+    },
+    {
+      "role": "assistant",
+      "content": "在项目里，Consumer优雅退出是通过WaitGroup的Wait方法等待实现的。如果Main函数接收到退出信号后直接调用Consumer.Close方法关闭Channel，而不等待Consumer把某个消息彻底消费完，可能会导致消费者消费了某个消息但来不及发送Ack，Broker会误以为消息未被处理，并把消息重新发送给其他消费者，造成消息重复处理。通过WaitGroup的Wait方法等待，可以保证消费者是处理完消息后自愿退出，不会处理到一半突然退出。[1]"
+    },
+    {
+      "role": "user",
+      "content": "今天天气怎么样"
+    },
+    {
+      "role": "assistant",
+      "content": "提供的资料中没有相关内容。"
+    }
+  ],
+  "created_at": 1786675285,
+  "updated_at": 1786675547
+}
