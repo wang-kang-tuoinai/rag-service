@@ -5,7 +5,7 @@ from sentence_transformers import CrossEncoder
 
 # 初始化模型
 model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
-reranker = reranker = CrossEncoder("BAAI/bge-reranker-base")
+reranker = CrossEncoder("BAAI/bge-reranker-base")
 
 
 def retrieve_with_rank(

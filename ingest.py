@@ -1,9 +1,20 @@
 # 读取docs目录下面的文件，相对路径作为source，目录名作为topic
+import re
 from pathlib import Path
+
+
+def clean_markdown(text: str) -> str:
+    """清洗 Markdown:保留链接文字,去掉 URL、图片标记和无用括号"""
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)   # 图片 ![alt](url) → alt
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)     # 链接 [text](url) → text
+    text = re.sub(r"https?://\S+", "", text)                 # 裸 URL 直接删
+    return text
+
+
 def load_documents(root: str) -> list[dict]:
     docs = []
     for path in Path(root).rglob("*.md"):
-        text = path.read_text(encoding="utf-8")
+        text = clean_markdown(path.read_text(encoding="utf-8"))
         docs.append(
             {"text": text, "source": str(path.relative_to(root)), "topic": path.parent.name}
         )
@@ -44,7 +55,7 @@ def _split_recursive(text, separators, size):
     parts = text.split(sep)
     pieces = []
     for j, p in enumerate(parts):
-        if not p:
+        if not p.strip():       # 空行(含空格/制表符)直接跳过,避免拼进 chunk 中间
             continue
         # 把分隔符加回去,不然句号全丢了
         piece = p + sep if j < len(parts) - 1 else p
@@ -77,7 +88,9 @@ def _merge(pieces, size, overlap):
 def recursive_split(text, size=300, overlap=50, separators=None)->list[str]:
     if separators is None:
         separators = ["\n\n", "\n", "。", "！", "？", "；", "，", ""]
-    return _merge(_split_recursive(text, separators, size), size, overlap)
+    chunks = _merge(_split_recursive(text, separators, size), size, overlap)
+    # 兜底:去掉首尾空白,过滤掉纯空白 chunk(如硬切分支产生的)
+    return [c.strip() for c in chunks if c.strip()]
 
 docs = load_documents("./docs")
 

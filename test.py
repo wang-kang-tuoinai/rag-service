@@ -7,10 +7,11 @@ import chromadb as chroma
 
 # 获取构建好的collection
 client = chroma.PersistentClient(path="./my_chroma_data")
-collection = client.get_collection("go_docs")
-
-if collection is None:
+try:
+    collection = client.get_collection("go_docs")
+except Exception:
     print("对应Collection不存在")
+    raise
 
 
 def _fmt_time(ts):
