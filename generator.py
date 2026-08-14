@@ -2,7 +2,9 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 import os
 
-client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
+)
 
 SYSTEM_PROMPT = """你是一个技术文档问答助手。请严格基于下面提供的资料回答问题。
 
@@ -16,7 +18,9 @@ SYSTEM_PROMPT = """你是一个技术文档问答助手。请严格基于下面�
 def build_context(chunks):
     parts = []
     for i, c in enumerate(chunks, 1):
-        parts.append(f"[{i}] (来自:{c['metadata']['source']} - {c['metadata']['topic']})\n{c['document']}")
+        parts.append(
+            f"[{i}] (来自:{c['metadata']['source']} - {c['metadata']['topic']})\n{c['document']}"
+        )
     return "\n\n".join(parts)
 
 
@@ -24,9 +28,13 @@ def generate(question, chunks, history=None):
     """生成回答，history 为之前多轮的 user/assistant 消息列表，用于多轮记忆"""
     history = history or []
     context = build_context(chunks)
-    messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
     messages += history
-    messages.append({"role": "user", "content": f"【资料】\n{context}\n\n【问题】\n{question}"})
+    messages.append(
+        {"role": "user", "content": f"【资料】\n{context}\n\n【问题】\n{question}"}
+    )
     resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
     return resp.choices[0].message.content
 
@@ -43,3 +51,30 @@ def generate_title(first_message, max_len=20):
     )
     title = (resp.choices[0].message.content or "").strip()
     return title[:max_len] if title else first_message[:max_len]
+
+
+def generate_query(question, history=None):
+    """根据对话历史以及当前用户提问的问题给出合适的query"""
+    prompt = (
+        "请为下面用户的问题生成合适的query用于RAG检索，"
+        "只返回query本身："
+        f"{question}"
+    )
+    history = history or []
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "system",
+            "content": (
+                "你是一个检索查询改写助手。根据对话历史，把用户的问题改写成一个"
+                "独立、完整、包含具体技术术语的检索查询。只输出查询本身，不要解释。"
+            ),
+        }
+    ]
+    messages.extend(history[-4:])
+    messages.append(
+        {"role":"user","content":prompt}
+    )
+    resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
+    query = (resp.choices[0].message.content or "").strip()
+    query = query.strip('"\'“”‘’「」『』`')
+    return query or question

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from retriever import retrieve_with_rank
-from generator import generate
+from generator import generate,generate_query
 from chat_scroll import new_conversation, load, list_conversations, save
 import chromadb as chroma
 
@@ -40,7 +40,9 @@ def main():
         q = input("\n问题：").strip()
         if q.lower() == "quit":
             break
-        chunks = retrieve_with_rank(collection=collection, query=q)
+        query = generate_query(q,conv["messages"])
+        print(f"system:生成的query为{query}")
+        chunks = retrieve_with_rank(collection=collection, query=query)
         answer = generate(question=q, chunks=chunks, history=conv["messages"])
         print(f"\n回答:\n{answer}")
         print(f"\n参考资料:")
