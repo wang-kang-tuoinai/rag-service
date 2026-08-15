@@ -1,6 +1,7 @@
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 import os
+import json
 
 client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
@@ -24,7 +25,7 @@ def build_context(chunks):
     return "\n\n".join(parts)
 
 
-def generate(question, chunks, history=None):
+def generate(question, chunks, history: list[ChatCompletionMessageParam] | None = None):
     """生成回答，history 为之前多轮的 user/assistant 消息列表，用于多轮记忆"""
     history = history or []
     context = build_context(chunks)
@@ -32,9 +33,11 @@ def generate(question, chunks, history=None):
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
     messages += history
-    messages.append(
-        {"role": "user", "content": f"【资料】\n{context}\n\n【问题】\n{question}"}
-    )
+    user_msg: ChatCompletionMessageParam = {
+        "role": "user",
+        "content": f"【资料】\n{context}\n\n【问题】\n{question}",
+    }
+    messages.append(user_msg)
     resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
     return resp.choices[0].message.content
 
@@ -53,28 +56,40 @@ def generate_title(first_message, max_len=20):
     return title[:max_len] if title else first_message[:max_len]
 
 
-def generate_query(question, history=None):
-    """根据对话历史以及当前用户提问的问题给出合适的query"""
-    prompt = (
-        "请为下面用户的问题生成合适的query用于RAG检索，"
-        "只返回query本身："
-        f"{question}"
-    )
+def generate_query_and_corpus(
+    question, history: list[ChatCompletionMessageParam] | None = None
+) -> tuple[str, str]:
+    """根据对话历史以及当前用户提问的问题给出合适的query,并判断在哪个语料范围内搜索"""
     history = history or []
-    messages: list[ChatCompletionMessageParam] = [
-        {
-            "role": "system",
-            "content": (
-                "你是一个检索查询改写助手。根据对话历史，把用户的问题改写成一个"
-                "独立、完整、包含具体技术术语的检索查询。只输出查询本身，不要解释。"
-            ),
-        }
-    ]
-    messages.extend(history[-4:])
-    messages.append(
-        {"role":"user","content":prompt}
+    recent = history[-4:]
+    system = (
+        "你是检索请求分析器。根据用户问题和最近的对话，输出一个 JSON 对象：\n"
+        '{"query": "改写后的检索query，应包含具体技术术语", '
+        '"corpus": "my-notes 或 go-official 或 all"}\n\n'
+        "corpus 判断规则：\n"
+        "- my-notes：用户自己的 Redis/MySQL/消息队列/微服务等项目笔记和踩坑记录，"
+        "问'我的项目'、'我们的实现'、具体技术原理时选这个\n"
+        "- go-official：Go 语言官方文档，问 Go 语法、标准库用法、defer/panic/recover "
+        "这类语言本身的问题时选这个\n"
+        "- all：不确定属于哪一类，或问题同时涉及两者时选这个\n\n"
+        "只返回 JSON，不要任何解释或代码块标记。"
     )
-    resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
-    query = (resp.choices[0].message.content or "").strip()
-    query = query.strip('"\'“”‘’「」『』`')
-    return query or question
+    messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": system}]
+    messages += recent
+    messages.append({"role": "user", "content": question})
+    resp = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=messages,
+        response_format={"type": "json_object"},
+        temperature=0
+    )
+    raw = (resp.choices[0].message.content or "").strip()
+    try:
+        result: dict = json.loads(raw)
+        query = result.get("query", "").strip() or question
+        corpus = result.get("corpus", "all")
+        if corpus not in ("my-notes", "go-official", "all"):
+            corpus = "all"
+        return query, corpus
+    except json.JSONDecodeError:
+        return question, "all"

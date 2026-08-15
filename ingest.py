@@ -15,8 +15,16 @@ def load_documents(root: str) -> list[dict]:
     docs = []
     for path in Path(root).rglob("*.md"):
         text = clean_markdown(path.read_text(encoding="utf-8"))
+        rel = path.relative_to(root)
+        # corpus 取 docs 下第一层目录名（如 go-official、my-notes）
+        corpus = rel.parts[0] if len(rel.parts) > 1 else path.parent.name
         docs.append(
-            {"text": text, "source": str(path.relative_to(root)), "topic": path.parent.name}
+            {
+                "text": text,
+                "source": str(rel),
+                "topic": path.parent.name,
+                "corpus": corpus,
+            }
         )
     return docs
 
@@ -103,7 +111,14 @@ for i,d in enumerate(docs):
     for j,chunk in enumerate(chunks):
         chunk_ids.append(f"doc_{i}_chunk_{j}")
         chunk_texts.append(chunk)
-        chunk_metadatas.append({"source":d["source"],"topic":d["topic"],"chunk_index":j})
+        chunk_metadatas.append(
+            {
+                "source": d["source"],
+                "topic": d["topic"],
+                "corpus": d["corpus"],
+                "chunk_index": j,
+            }
+        )
 
 chunk_embeddings = model.encode(chunk_texts, normalize_embeddings=True).tolist()
 

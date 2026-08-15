@@ -1,0 +1,24 @@
+{
+  "id": "0c645cd89680461f",
+  "title": "Go导入未使用包报错",
+  "messages": [
+    {
+      "role": "user",
+      "content": "go里面导入某个包但是不使用他会报错吗"
+    },
+    {
+      "role": "assistant",
+      "content": "提供的资料中没有相关内容。"
+    },
+    {
+      "role": "user",
+      "content": "Go语言的包注释是什么"
+    },
+    {
+      "role": "assistant",
+      "content": "提供的资料中没有相关内容。"
+    }
+  ],
+  "created_at": 1786793752,
+  "updated_at": 1786793837
+}
