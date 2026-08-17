@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder
 from retriever import retrieve_with_rank
 from generator import generate,generate_query_and_corpus
 from chat_scroll import new_conversation, load, list_conversations, save
@@ -12,6 +14,10 @@ try:
 except Exception:
     print("对应Collection不存在")
     raise
+
+# 加载模型（retriever 现在要求调用方传入）
+model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
+reranker = CrossEncoder("BAAI/bge-reranker-base")
 
 
 def _fmt_time(ts):
@@ -43,7 +49,7 @@ def main():
             break
         query,corpus = generate_query_and_corpus(q,conv["messages"])
         print(f"system: query={query},corpus={corpus}")
-        chunks = retrieve_with_rank(collection=collection, query=query,corpus=corpus)
+        chunks = retrieve_with_rank(collection=collection, query=query, model=model, reranker=reranker, corpus=corpus)
         answer = generate(question=q, chunks=chunks, history=conv["messages"],)
         print(f"\n回答:\n{answer}")
         print(f"\n参考资料:")

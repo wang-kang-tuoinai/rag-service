@@ -1,19 +1,15 @@
-# 该文件是检索+rerank的作用
+# 该文件是检索+rerank的作用（纯函数，模型由调用方传入）
 import chromadb as chroma
 from chromadb import Where
 from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 
-# 初始化模型
-model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
-reranker = CrossEncoder("BAAI/bge-reranker-base")
-
 
 def retrieve_with_rank(
     collection: chroma.Collection,
     query,
-    model: SentenceTransformer = model,
-    reranker: CrossEncoder = reranker,
+    model: SentenceTransformer,
+    reranker: CrossEncoder,
     corpus: str = "all",
     recall_k=20,
     final_k=3,

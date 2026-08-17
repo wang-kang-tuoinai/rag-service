@@ -1,6 +1,7 @@
 import statistics
 
 import chromadb as chroma
+from chromadb import Where
 from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 
@@ -154,8 +155,11 @@ def evaluate(collection, eval_set, model, reranker, recall_k=20, final_k=3):
             else:
                 corpus_missed.append((item["query"], expect_corpus, pred_corpus))
 
+        where: Where | None = {"corpus": pred_corpus} if pred_corpus != "all" else None
         q_emb = model.encode(INSTRUCTION + q, normalize_embeddings=True).tolist()
-        candidates = collection.query(query_embeddings=[q_emb], n_results=recall_k)
+        candidates = collection.query(
+            query_embeddings=[q_emb], n_results=recall_k, where=where
+        )
         docs = candidates["documents"][0]
         pairs = [[q, doc] for doc in docs]
         scores = reranker.predict(pairs)
