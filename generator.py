@@ -3,6 +3,10 @@ from openai.types.chat import ChatCompletionMessageParam
 import os
 import json
 
+from opentelemetry import trace
+
+tracer = trace.get_tracer("rag-service")
+
 client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
 )
@@ -38,8 +42,10 @@ def generate(question, chunks, history: list[ChatCompletionMessageParam] | None 
         "content": f"【资料】\n{context}\n\n【问题】\n{question}",
     }
     messages.append(user_msg)
-    resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
-    return resp.choices[0].message.content
+    with tracer.start_as_current_span("generate_answer") as span:
+        span.set_attribute("rag.chunk_count", len(chunks))
+        resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
+        return resp.choices[0].message.content
 
 
 def generate_title(first_message, max_len=20):
@@ -48,12 +54,13 @@ def generate_title(first_message, max_len=20):
         f"请为下面的对话起一个简洁的标题（不超过{max_len}个字），"
         "只返回标题本身，不要加引号或标点符号：\n" + first_message
     )
-    resp = client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": prompt}],
-    )
-    title = (resp.choices[0].message.content or "").strip()
-    return title[:max_len] if title else first_message[:max_len]
+    with tracer.start_as_current_span("generate_title"):
+        resp = client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        title = (resp.choices[0].message.content or "").strip()
+        return title[:max_len] if title else first_message[:max_len]
 
 
 def generate_query_and_corpus(
@@ -77,19 +84,26 @@ def generate_query_and_corpus(
     messages: list[ChatCompletionMessageParam] = [{"role": "system", "content": system}]
     messages += recent
     messages.append({"role": "user", "content": question})
-    resp = client.chat.completions.create(
-        model="deepseek-v4-flash",
-        messages=messages,
-        response_format={"type": "json_object"},
-        temperature=0
-    )
-    raw = (resp.choices[0].message.content or "").strip()
-    try:
-        result: dict = json.loads(raw)
-        query = result.get("query", "").strip() or question
-        corpus = result.get("corpus", "all")
-        if corpus not in ("my-notes", "go-official", "all"):
-            corpus = "all"
-        return query, corpus
-    except json.JSONDecodeError:
-        return question, "all"
+    with tracer.start_as_current_span("generate_query") as span:
+        span.set_attribute("rag.question", question)
+        span.set_attribute("rag.history_len", len(history))
+        resp = client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        try:
+            result: dict = json.loads(raw)
+            query = result.get("query", "").strip() or question
+            corpus = result.get("corpus", "all")
+            if corpus not in ("my-notes", "go-official", "all"):
+                corpus = "all"
+            span.set_attribute("rag.query", query)
+            span.set_attribute("rag.corpus", corpus)
+            return query, corpus
+        except json.JSONDecodeError:
+            span.set_attribute("rag.query", question)
+            span.set_attribute("rag.corpus", "all")
+            return question, "all"
