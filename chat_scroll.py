@@ -72,7 +72,8 @@ def load_meta(conv_id: str) -> dict | None:
 # ---------- 消息读写 ----------
 
 def append_message(conv_id: str, role: str, content: str,
-                   references: list[dict] | None = None) -> dict:
+                   references: list[dict] | None = None,
+                   timestamp: int | None = None) -> dict:
     """追加一条消息到 messages/<id>.jsonl，返回写入的消息 dict"""
     with tracer.start_as_current_span("append_message") as span:
         span.set_attribute("rag.conversation_id", conv_id)
@@ -81,7 +82,7 @@ def append_message(conv_id: str, role: str, content: str,
         msg = {
             "role": role,
             "content": content,
-            "timestamp": int(time.time()),
+            "timestamp": timestamp if timestamp is not None else int(time.time()),
             "references": references or [],
         }
         with open(_msg_path(conv_id), "a", encoding="utf-8") as f:
@@ -164,9 +165,10 @@ def save_conversation_with_messages(
     """
     conv_id = meta["id"]
 
-    # 追加消息
-    append_message(conv_id, "user", user_content)
-    append_message(conv_id, "assistant", assistant_content, references)
+    # 追加消息（确保 assistant 时间戳严格大于 user，避免同秒排序翻转）
+    user_ts = int(time.time())
+    append_message(conv_id, "user", user_content, timestamp=user_ts)
+    append_message(conv_id, "assistant", assistant_content, references, timestamp=user_ts + 1)
 
     # 更新消息计数
     meta["message_count"] = meta.get("message_count", 0) + 2
