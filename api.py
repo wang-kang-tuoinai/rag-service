@@ -32,13 +32,34 @@ class ListHistoryResponse(BaseModel):
     has_more: bool = False  # 是否还有更多，前端据此判断要不要继续滚
 
 
-class QueryRequest(BaseModel):
-    question: str
+class ListMessagesRequest(BaseModel):
+    limit: int = Field(20, ge=1, le=100, description="每页条数")
+    cursor: int | None = Field(
+        None, description="上一页最后一条的 timestamp，首页不传"
+    )
 
 
 class Reference(BaseModel):
     source: str
     topic: str
+
+
+class MessageItem(BaseModel):
+    role: str
+    content: str
+    timestamp: int
+    references: list[Reference] = []
+
+
+class ListMessagesResponse(BaseModel):
+    conversation_id: str
+    items: list[MessageItem]
+    next_cursor: int | None = None
+    has_more: bool = False
+
+
+class QueryRequest(BaseModel):
+    question: str
 
 
 class QueryResponse(BaseModel):
@@ -93,18 +114,44 @@ def list_history_v2(params: ListHistoryRequest = Depends()):
     return _paginate_history(params)
 
 
+# ---------- 消息列表接口 ----------
+
+
+@v1_router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=ListMessagesResponse,
+)
+def list_messages_v1(
+    conversation_id: str,
+    params: ListMessagesRequest = Depends(),
+):
+    """游标分页加载对话消息，按 timestamp 倒序"""
+    meta = chat_scroll.load_meta(conversation_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    result = chat_scroll.list_messages(
+        conversation_id, limit=params.limit, cursor=params.cursor
+    )
+    return ListMessagesResponse(**result)
+
+
+# ---------- 问答接口 ----------
+
+
 def _ask(
-    conversation: dict | None, question: str, collection, model, reranker
+    meta: dict | None, question: str, collection, model, reranker
 ) -> QueryResponse:
     """问答主流程：检索 + 生成 + 落库，两个接口共用（纯同步，调用方负责丢线程）"""
-    if conversation is None:
-        conversation = chat_scroll.new_conversation()
+    if meta is None:
+        meta = chat_scroll.new_conversation()
 
+    # 从 JSONL 加载历史消息构造 LLM history
+    all_msgs = chat_scroll.load_all_messages(meta["id"])
     history = cast(
         list[ChatCompletionMessageParam],
         [
             {"role": m["role"], "content": m["content"]}
-            for m in conversation.get("messages", [])
+            for m in all_msgs
         ],
     )
 
@@ -116,19 +163,23 @@ def _ask(
         generator.generate(question, chunks, history) or "抱歉，生成回答失败，请重试。"
     )
 
-    conversation["messages"].append({"role": "user", "content": question})
-    conversation["messages"].append({"role": "assistant", "content": answer})
-    chat_scroll.save(conversation)
+    # 构造引用列表
+    refs = [
+        {"source": c["metadata"].get("source", ""), "topic": c["metadata"].get("topic", "")}
+        for c in chunks
+    ]
+
+    # 追加消息并更新元数据（含 references 持久化）
+    chat_scroll.save_conversation_with_messages(
+        meta, user_content=question, assistant_content=answer, references=refs
+    )
 
     return QueryResponse(
         answer=answer,
-        conversation_id=conversation["id"],
+        conversation_id=meta["id"],
         references=[
-            Reference(
-                source=c["metadata"].get("source", ""),
-                topic=c["metadata"].get("topic", ""),
-            )
-            for c in chunks
+            Reference(source=r["source"], topic=r["topic"])
+            for r in refs
         ],
     )
 
@@ -145,10 +196,10 @@ async def ask_new(req: QueryRequest, request: Request):
 @v1_router.post("/conversations/{conversation_id}/ask", response_model=QueryResponse)
 async def ask(req: QueryRequest, conversation_id: str, request: Request):
     """在已有对话里继续提问"""
-    conversation = await asyncio.to_thread(chat_scroll.load, conversation_id)
-    if conversation is None:
+    meta = await asyncio.to_thread(chat_scroll.load_meta, conversation_id)
+    if meta is None:
         raise HTTPException(status_code=404, detail="会话不存在")
     state = request.app.state
     return await asyncio.to_thread(
-        _ask, conversation, req.question, state.collection, state.model, state.reranker
+        _ask, meta, req.question, state.collection, state.model, state.reranker
     )

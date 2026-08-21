@@ -47,7 +47,7 @@ def generate(question, chunks, history: list[ChatCompletionMessageParam] | None 
         resp = client.chat.completions.create(model="deepseek-v4-flash", messages=messages)
         return resp.choices[0].message.content
 
-
+# 待优化 generate可以与召回并行执行
 def generate_title(first_message, max_len=20):
     """根据首条用户消息生成一个简洁的会话标题"""
     prompt = (

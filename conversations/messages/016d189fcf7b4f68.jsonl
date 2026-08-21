@@ -1,0 +1,2 @@
+{"role": "user", "content": "Go并发编程的核心理念是啥", "timestamp": 1786941222, "references": []}
+{"role": "assistant", "content": "Go并发编程的核心理念是“不要通过共享内存来通信，而应通过通信来共享内存”，即通过信道传递共享值，避免多个协程主动共享变量，从而从设计上杜绝数据竞争。[1]", "timestamp": 1786941229, "references": []}

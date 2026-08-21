@@ -4,6 +4,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 import chromadb
 import asyncio
+import logging
 import api
 
 from opentelemetry import trace
@@ -12,6 +13,16 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+# 过滤 uvicorn 访问日志中的健康探针请求，避免 /health 每 5s 刷屏
+class _HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # 过滤掉 Docker healthcheck 发出的 GET /health 200 日志
+        return not ("GET /health" in msg and "200" in msg)
+
+logging.getLogger("uvicorn.access").addFilter(_HealthCheckFilter())
+
 
 # 初始化 OpenTelemetry（exporter 会自动读 OTEL_EXPORTER_OTLP_ENDPOINT）
 tracer_provider = TracerProvider(resource=Resource.create({"service.name": "rag-service"}))

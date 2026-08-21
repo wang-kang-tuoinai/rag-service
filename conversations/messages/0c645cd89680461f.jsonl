@@ -1,0 +1,6 @@
+{"role": "user", "content": "go里面导入某个包但是不使用他会报错吗", "timestamp": 1786793752, "references": []}
+{"role": "assistant", "content": "提供的资料中没有相关内容。", "timestamp": 1786823194, "references": []}
+{"role": "user", "content": "Go语言的包注释是什么", "timestamp": 1786852637, "references": []}
+{"role": "assistant", "content": "提供的资料中没有相关内容。", "timestamp": 1786882079, "references": []}
+{"role": "user", "content": "它应该放在哪里", "timestamp": 1786911522, "references": []}
+{"role": "assistant", "content": "根据提供的资料，包注释应放置在**包子句前**[1]。", "timestamp": 1786940965, "references": []}
