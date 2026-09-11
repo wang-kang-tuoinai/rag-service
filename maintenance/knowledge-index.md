@@ -1,0 +1,33 @@
+# 项目知识文档（首批）
+
+本目录按用户要求使用 `doc/`，与已有 `docs/` 并存。包含 2 篇业务架构文档与 8 篇排查手册，依据 2026-09-11 当前工作区代码核对，不包含第三类官方技术文档。
+
+## 项目架构
+
+- [用户接口调用路径与失败语义](../doc/architecture/user-request-flows.md)
+- [中间件调用预算与消息契约](../doc/architecture/dependency-contracts.md)
+
+## 排查手册
+
+- [Redis 读取失败与数据库回源](../doc/runbooks/redis-read-fallback.md)
+- [缓存未命中与缓存 JSON 损坏](../doc/runbooks/cache-miss-invalid-data.md)
+- [缓存失效失败](../doc/runbooks/cache-invalidation.md)
+- [更新锁冲突、加锁与解锁失败](../doc/runbooks/redis-update-lock.md)
+- [MySQL 调用失败或耗时升高](../doc/runbooks/mysql-failure-slow.md)
+- [重复用户、用户不存在与布隆拦截](../doc/runbooks/expected-4xx-bloom.md)
+- [注册事件发布失败或消费者停止](../doc/runbooks/rabbitmq-publish-consume.md)
+- [依赖节点不慢但接口耗时高](../doc/runbooks/unexplained-latency.md)
+
+## 元数据与使用边界
+
+正文 front matter 保留 id、doc_type、project、service、component、deployment。源码依据、核对日期和验证状态集中记录在 [知识库维护清单](knowledge-maintenance.md)。
+
+代码依据路径相对 ops-agent 仓库根目录。项目行为以实际部署代码、配置和观测为准；文档只提供待验证的解释，不能替代实时证据。人工检查和处理建议不意味着 Agent 已有相应执行工具或授权。
+
+## 后续入库工作（本次未执行）
+
+当前 ingest.py 调用 load_documents("./docs")，所以本目录尚不会被自动入库。本次没有修改导入脚本、运行模型、删除 collection 或重建索引。
+
+接入时需要显式增加 doc/ 来源，解析 front matter 并把元数据附到每个片段。不要仅修改目录就假定元数据已经进入 Chroma。建议架构按章节切分，手册保留症状、假设与验证步骤的联系；较长手册按排查分支拆分并重复必要适用范围。README 是维护索引，建议不作为诊断知识检索内容。
+
+运行故障实验后，补充预期/实际证据、结果及部署版本，再更新维护清单中的验证状态。保留未知项，不填未经测量的概率或诊断准确率。知识内容引用用户字段时不录入真实密码、密钥或业务数据。
