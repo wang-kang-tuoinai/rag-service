@@ -1,132 +1,176 @@
-# 读取docs目录下面的文件，相对路径作为source，目录名作为topic
+"""运维知识入库：章节向量 + YAML metadata + 父文档快照。"""
+import argparse
+import hashlib
+import json
+import math
 import re
 from pathlib import Path
 
+import yaml
 
-def clean_markdown(text: str) -> str:
-    """清洗 Markdown:保留链接文字,去掉 URL、图片标记和无用括号"""
-    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)   # 图片 ![alt](url) → alt
-    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)     # 链接 [text](url) → text
-    text = re.sub(r"https?://\S+", "", text)                 # 裸 URL 直接删
-    return text
+BASE = Path(__file__).resolve().parent
+MODEL = "BAAI/bge-base-zh-v1.5"
+COLLECTION = "ops_knowledge"
+REQUIRED = ("id", "doc_type", "project", "service", "component", "deployment")
+RESERVED = {"doc_id", "chunk_id", "source", "title", "section", "chunk_index", "snapshot_id"}
 
 
-def load_documents(root: str) -> list[dict]:
-    docs = []
-    for path in Path(root).rglob("*.md"):
-        text = clean_markdown(path.read_text(encoding="utf-8"))
-        rel = path.relative_to(root)
-        # corpus 取 docs 下第一层目录名（如 go-official、my-notes）
-        corpus = rel.parts[0] if len(rel.parts) > 1 else path.parent.name
-        docs.append(
-            {
-                "text": text,
-                "source": str(rel),
-                "topic": path.parent.name,
-                "corpus": corpus,
-            }
-        )
-    return docs
+def parse_document(path: Path, root: Path) -> dict:
+    """读取并解析 Markdown 文档，校验 YAML front matter 元数据及正文合法性。"""
+    text = path.read_text(encoding="utf-8-sig")
+    match = re.match(r"\A---\s*\n(.*?)\n---\s*(?:\n|$)", text, re.S)
+    if not match:
+        raise ValueError(f"{path}: 缺少 YAML front matter")
+    metadata = yaml.safe_load(match.group(1))
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{path}: metadata 必须是映射")
+    for key in REQUIRED:
+        if not isinstance(metadata.get(key), str) or not metadata[key].strip():
+            raise ValueError(f"{path}: {key} 必须是非空字符串")
+    if metadata["doc_type"] not in {"architecture", "runbook"}:
+        raise ValueError(f"{path}: 不支持的 doc_type")
+    for key, value in metadata.items():
+        if not isinstance(key, str) or key in RESERVED:
+            raise ValueError(f"{path}: metadata 键非法或与保留字段冲突: {key}")
+        if not isinstance(value, (str, int, float, bool)) or (
+            isinstance(value, float) and not math.isfinite(value)
+        ):
+            raise ValueError(f"{path}: {key} 请使用字符串/数字/布尔值，日期请加引号")
+    body = text[match.end():].strip()
+    if not body:
+        raise ValueError(f"{path}: 正文为空")
+    return {"metadata": metadata, "body": body, "source": path.relative_to(root).as_posix()}
 
-import chromadb as chroma
-from sentence_transformers import SentenceTransformer
 
-# 使用BAAI/bge-base-zh-v1.5这个embed模型对doc进行向量化(与 retriever 保持一致)
-model = SentenceTransformer("BAAI/bge-base-zh-v1.5")
+def split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
+    """按 H2 拆分，保留 H3、列表、表格；代码围栏中的标题不是分隔符。"""
+    title = ""
+    section = "概述"
+    lines = []
+    sections = []
+    fence_char, fence_size = "", 0
 
-client = chroma.PersistentClient(path="./my_chroma_data")
-# 不存在就创建collection，存在先删除再创建
-try:
-    client.delete_collection("go_docs")
-except Exception:
-    pass
-collection = client.create_collection("go_docs", metadata={"hnsw:space": "cosine"})
+    def flush():
+        content = "\n".join(lines).strip()
+        if content:
+            sections.append((section, content))
 
-# 递归切分
-def _split_recursive(text, separators, size):
-    """阶段一:递归切,直到每个片段都不超过 size"""
-    if len(text) <= size:
-        return [text]
-
-    # 找第一个在文本里出现的分隔符
-    sep, rest = "", []
-    for i, s in enumerate(separators):
-        if s == "":              # 兜底:没有任何分隔符可用
-            break
-        if s in text:
-            sep, rest = s, separators[i + 1:]
-            break
-    # 如果没有找到分割符,直接按长度硬切
-    if sep == "":                # 硬切
-        return [text[i:i + size] for i in range(0, len(text), size)]
-
-    parts = text.split(sep)
-    pieces = []
-    for j, p in enumerate(parts):
-        if not p.strip():       # 空行(含空格/制表符)直接跳过,避免拼进 chunk 中间
+    for line in body.splitlines():
+        # 处理代码块，防止代码块里的#被错误识别
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence_char:
+            lines.append(line)
+            if fence and fence.group(1)[0] == fence_char and len(fence.group(1)) >= fence_size and not fence.group(2).strip():
+                fence_char = ""
             continue
-        # 把分隔符加回去,不然句号全丢了
-        piece = p + sep if j < len(parts) - 1 else p
-        # 如果切分后的长度还是大于size,递归再切分
-        if len(piece) > size:
-            pieces.extend(_split_recursive(piece, rest, size))  # 降级再切
+        if fence:
+            fence_char, fence_size = fence.group(1)[0], len(fence.group(1))
+            lines.append(line)
+            continue
+        heading = re.match(r"^ {0,3}(#{1,2})\s+(.+?)\s*#*\s*$", line)
+        if heading and heading.group(1) == "#" and not title:
+            title = heading.group(2)
+            continue
+        if heading and heading.group(1) == "##":
+            flush()
+            section = heading.group(2)
+            lines = []
         else:
-            pieces.append(piece)
-    return pieces
+            lines.append(line)
+    flush()
+    if not title or not sections:
+        raise ValueError("文档必须有一级标题和非空章节正文")
+    return title, sections
 
 
-def _merge(pieces, size, overlap):
-    """阶段二:把小片段合并到接近 size"""
-    chunks, cur, cur_len = [], [], 0
-    for p in pieces:
-        # 如果再加一个会超过size，并且当前cur缓冲区不为空，那就先将当前缓冲区内容作为一个chunk
-        if cur_len + len(p) > size and cur:
-            chunks.append("".join(cur))
-            # 从头部丢弃,保留末尾约 overlap 长度作为重叠
-            while cur and cur_len > overlap:
-                cur_len -= len(cur[0])
-                cur.pop(0)
-        cur.append(p)
-        cur_len += len(p)
-    if cur:
-        chunks.append("".join(cur))
-    return chunks
+def prepare(root: Path) -> tuple[dict, list[dict]]:
+    """遍历目录下所有 Markdown 文档，执行解析、去重校验、章节切分并组装向量库切片数据。"""
+    parents, chunks = {}, []
+    for path in sorted(root.rglob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
+        doc = parse_document(path, root)
+        doc_id = doc["metadata"]["id"]
+        if doc_id in parents:
+            raise ValueError(f"重复文档 id: {doc_id}")
+        title, sections = split_sections(doc["body"])
+        doc["title"] = title
+        parents[doc_id] = doc
+        for index, (section, content) in enumerate(sections):
+            chunk_id = f"{doc_id}::section::{index}"
+            chunks.append({
+                "id": chunk_id,
+                "text": f"文档标题：{title}\n章节标题：{section}\n\n{content}",
+                "metadata": {
+                    **doc["metadata"], "doc_id": doc_id, "chunk_id": chunk_id,
+                    "source": doc["source"], "title": title, "section": section,
+                    "chunk_index": index,
+                },
+            })
+    if not chunks:
+        raise ValueError(f"{root}: 没有可入库章节")
+    return parents, chunks
 
-# 先切分，再合并。
-def recursive_split(text, size=300, overlap=50, separators=None)->list[str]:
-    if separators is None:
-        separators = ["\n\n", "\n", "。", "！", "？", "；", "，", ""]
-    chunks = _merge(_split_recursive(text, separators, size), size, overlap)
-    # 兜底:去掉首尾空白,过滤掉纯空白 chunk(如硬切分支产生的)
-    return [c.strip() for c in chunks if c.strip()]
 
-docs = load_documents("./docs")
+def build_index(parents: dict, chunks: list[dict], db_path: Path):
+    # 校验完成后才加载模型；禁止静默截断章节。
+    import chromadb
+    from sentence_transformers import SentenceTransformer
 
-# 把文档切分塞入collection
-chunk_ids = []
-chunk_texts = []
-chunk_metadatas = []
-for i,d in enumerate(docs):
-    chunks = recursive_split(d["text"])
-    for j,chunk in enumerate(chunks):
-        chunk_ids.append(f"doc_{i}_chunk_{j}")
-        chunk_texts.append(chunk)
-        chunk_metadatas.append(
-            {
-                "source": d["source"],
-                "topic": d["topic"],
-                "corpus": d["corpus"],
-                "chunk_index": j,
-            }
+    model = SentenceTransformer(MODEL)
+    texts = [c["text"] for c in chunks]
+    sizes = [len(model.tokenizer.encode(text, add_special_tokens=True, truncation=False)) for text in texts]
+    oversized = [chunks[i]["id"] for i, n in enumerate(sizes) if n > model.max_seq_length]
+    if oversized:
+        raise ValueError(f"章节超过模型 {model.max_seq_length} token 上限，需细分后重试: {oversized}")
+    embeddings = model.encode(texts, normalize_embeddings=True).tolist()
+
+    # 内容寻址快照：每条向量指向本次正文，而非后续修改过的 Markdown。
+    payload = json.dumps(parents, ensure_ascii=False, sort_keys=True, indent=2)
+    snapshot_id = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    snapshot_dir = db_path / "ops_knowledge_parents"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = snapshot_dir / f"{snapshot_id}.json"
+    if not snapshot.exists():
+        temporary = snapshot.with_suffix(".tmp")
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(snapshot)
+
+    client = chromadb.PersistentClient(path=str(db_path))
+    collection = client.get_or_create_collection(
+        COLLECTION, metadata={"hnsw:space": "cosine", "embedding_model": MODEL}
+    )
+    ids = [c["id"] for c in chunks]
+    # 小规模全量同步：写入成功后才删除已消失的章节，不触碰 go_docs。
+    batch_size = min(client.get_max_batch_size(), 128)
+    for start in range(0, len(chunks), batch_size):
+        batch = chunks[start:start + batch_size]
+        collection.upsert(
+            ids=[c["id"] for c in batch],
+            documents=[c["text"] for c in batch],
+            metadatas=[{**c["metadata"], "snapshot_id": snapshot_id} for c in batch],
+            embeddings=embeddings[start:start + batch_size],
         )
+    stale = sorted(set(collection.get()["ids"]) - set(ids))
+    for start in range(0, len(stale), batch_size):
+        collection.delete(ids=stale[start:start + batch_size])
+    return collection.count(), snapshot
 
-chunk_embeddings = model.encode(chunk_texts, normalize_embeddings=True).tolist()
 
-collection.add(
-    ids=chunk_ids,
-    documents=chunk_texts,
-    metadatas=chunk_metadatas,
-    embeddings=chunk_embeddings,
-)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=BASE / "doc")
+    parser.add_argument("--db-path", type=Path, default=BASE / "my_chroma_data")
+    parser.add_argument("--dry-run", action="store_true", help="只校验解析和切分，不加载模型或写索引")
+    args = parser.parse_args()
+    parents, chunks = prepare(args.root)
+    print(f"文档 {len(parents)} 篇，章节 {len(chunks)} 个")
+    if args.dry_run:
+        print(json.dumps(chunks[0], ensure_ascii=False, indent=2))
+        return
+    count, snapshot = build_index(parents, chunks, args.db_path)
+    print(f"{COLLECTION} 入库完成：{count} 个章节；父文档：{snapshot}")
 
-print(f"索引完成:{collection.count()}个chunk")
+
+if __name__ == "__main__":
+    main()
