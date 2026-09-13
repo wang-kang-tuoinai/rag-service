@@ -22,7 +22,7 @@
 
 ## 检索流程
 
-复用服务启动时的 embedding 和 reranker。将 query 加上 BGE 查询前缀后向量化，从 ops_knowledge 召回最多 20 个章节；doc_type 作为 Chroma where 条件。精排输入为 (原始 query, 章节文本)。按 snapshot_id + doc_id 分组，每组最高章节分数作为文档分数，取 top_k 篇。matched_sections 来自命中章节 metadata.section，去重并按章节分数排列。
+复用服务启动时的 embedding 和 reranker。将 query 加上 BGE 查询前缀后向量化，从 ops_knowledge 召回最多 20 个章节；doc_type 作为 Chroma where 条件。精排输入为 (原始 query, 章节文本)。按 doc_id 分组，组内保留 snapshot_id 用于读取正文，并校验同一文档的快照一致性，每组最高章节分数作为文档分数，取 top_k 篇。matched_sections 来自命中章节 metadata.section，去重并按章节分数排列。
 
 父文档从 my_chroma_data/ops_knowledge_parents/<snapshot_id>.json 读取，通过 doc_id 获取。校验快照 SHA-256、文档 ID 和类型，不读取当前 doc/ 文件替代快照。一次查询内部复用已读取快照。
 

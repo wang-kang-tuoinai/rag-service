@@ -66,6 +66,11 @@ class KnowledgeTests(unittest.TestCase):
         self.assertIn("未命中章节", result["items"][0]["content"])
         self.assertNotIn("where", self.collection.kwargs)
 
+    def test_same_document_mixed_snapshots_rejected(self):
+        self.collection.rows[1][1]['snapshot_id'] = '0' * 64
+        with self.assertRaisesRegex(KnowledgeUnavailable, '多个快照'):
+            self.search()
+
     def test_filter_and_document_limit(self):
         result = self.search(doc_type="architecture", top_k=1)
         self.assertEqual(result["items"][0]["doc_id"], "b")

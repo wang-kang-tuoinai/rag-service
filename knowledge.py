@@ -59,7 +59,6 @@ def search_knowledge(collection, model, reranker, snapshot_dir: Path, query: str
     if len(scores) != len(texts):
         raise KnowledgeUnavailable("精排结果数量不匹配")
     grouped = {}
-    versions = {}
     for meta, raw_score in zip(metadata, scores):
         if any(not isinstance(meta.get(k), str) or not meta[k] for k in ("doc_id", "snapshot_id", "section", "doc_type")):
             raise KnowledgeUnavailable("章节缺少父文档关联字段")
@@ -69,15 +68,16 @@ def search_knowledge(collection, model, reranker, snapshot_dir: Path, query: str
         if not math.isfinite(score):
             raise KnowledgeUnavailable("精排分数非法")
         doc_id, snapshot_id = meta["doc_id"], meta["snapshot_id"]
-        if doc_id in versions and versions[doc_id] != snapshot_id:
+        group = grouped.setdefault(doc_id, {"snapshot_id": snapshot_id, "score": score,
+                                            "sections": {}, "doc_type": meta["doc_type"]})
+        if group["snapshot_id"] != snapshot_id:
             raise KnowledgeUnavailable("同一文档存在多个快照版本，请完成入库后重试")
-        versions[doc_id] = snapshot_id
-        group = grouped.setdefault((snapshot_id, doc_id), {"score": score, "sections": {}, "doc_type": meta["doc_type"]})
         group["score"] = max(group["score"], score)
         group["sections"][meta["section"]] = max(group["sections"].get(meta["section"], -math.inf), score)
     ranked = sorted(grouped.items(), key=lambda pair: (-pair[1]["score"], pair[0]))[:top_k]
     items, snapshots, used = [], {}, 0
-    for (snapshot_id, doc_id), group in ranked:
+    for doc_id, group in ranked:
+        snapshot_id = group["snapshot_id"]
         parent = load_parent(snapshot_dir, snapshot_id, doc_id, snapshots)
         if parent["metadata"].get("doc_type") != group["doc_type"]:
             raise KnowledgeUnavailable("章节与父文档类型不一致")

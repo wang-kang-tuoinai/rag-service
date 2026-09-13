@@ -102,7 +102,8 @@ def prepare(root: Path) -> tuple[dict, list[dict]]:
                 "id": chunk_id,
                 "text": f"文档标题：{title}\n章节标题：{section}\n\n{content}",
                 "metadata": {
-                    **doc["metadata"], "doc_id": doc_id, "chunk_id": chunk_id,
+                    **{key: value for key, value in doc["metadata"].items() if key != "id"},
+                    "doc_id": doc_id,
                     "source": doc["source"], "title": title, "section": section,
                     "chunk_index": index,
                 },

@@ -17,7 +17,7 @@ python ingest.py
 
 - Chroma 集合：ops_knowledge；余弦距离，归一化 embedding。
 - documents：文档标题 + 章节标题 + 章节正文，不拼 YAML 元数据。
-- 每条 metadata：原有全部标量字段，加 doc_id、chunk_id、source、title、section、chunk_index、snapshot_id。
+- 每条 metadata：文档头 id 转为 doc_id，其余标量字段保留，再加 source、title、section、chunk_index、snapshot_id。章节 ID 只通过 Chroma ids 存储，不在 metadata 中重复保存 id/chunk_id。父文档快照仍保留原始文档头 id。
 - 文档 id 必须唯一；必需字段缺失、空正文、非标量 metadata 均提前报错。日期如要增加必须写为带引号字符串。
 - H2 切分，H3、表格和代码块保留；一级标题前后的非 H2 正文归入“概述”。空章节不入库；没有 H2 时正文作为一个章节。
 - embedding 前按模型 tokenizer 检查长度，超限时拒绝入库，需进一步拆分章节，不静默截断。reranker 的输入预算仍需在后续检索层检查。
