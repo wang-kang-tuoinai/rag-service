@@ -6,6 +6,8 @@ import chromadb
 import asyncio
 import logging
 import api
+import knowledge_api
+from pathlib import Path
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -34,7 +36,8 @@ async def lifespan(app: FastAPI):
     # 启动时执行一次
     model_task = asyncio.to_thread(SentenceTransformer, "BAAI/bge-base-zh-v1.5")
     reranker_task = asyncio.to_thread(CrossEncoder, "BAAI/bge-reranker-base")
-    client_task = asyncio.to_thread(chromadb.PersistentClient, path="./my_chroma_data")
+    db_path = Path(__file__).resolve().parent / "my_chroma_data"
+    client_task = asyncio.to_thread(chromadb.PersistentClient, path=str(db_path))
 
     model, reranker, client = await asyncio.gather(
         model_task, reranker_task, client_task
@@ -46,6 +49,7 @@ async def lifespan(app: FastAPI):
     app.state.reranker = reranker
     app.state.client = client
     app.state.collection = collection
+    app.state.knowledge_snapshot_dir = db_path / "ops_knowledge_parents"
     yield
     tracer_provider.shutdown()
 
@@ -60,4 +64,5 @@ def health():
     return {"status": "ok", "model_loaded": hasattr(app.state, "model")}
 
 app.include_router(api.v1_router, prefix="/api/v1",tags=["v1"])
+app.include_router(knowledge_api.router, prefix="/api/v1", tags=["knowledge"])
 

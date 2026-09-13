@@ -1,5 +1,7 @@
 # 维护文档
 
+- [知识查询接口](knowledge-search-api.md)
+
 - [运维知识入库说明](ingestion.md)
 
 本目录面向项目开发者，不作为 RAG 知识库导入来源。

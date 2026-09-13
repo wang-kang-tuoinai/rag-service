@@ -82,7 +82,7 @@ def split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
         raise ValueError("文档必须有一级标题和非空章节正文")
     return title, sections
 
-
+# TODO doc_id和id字段重复
 def prepare(root: Path) -> tuple[dict, list[dict]]:
     """遍历目录下所有 Markdown 文档，执行解析、去重校验、章节切分并组装向量库切片数据。"""
     parents, chunks = {}, []

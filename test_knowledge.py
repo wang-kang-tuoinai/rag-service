@@ -1,0 +1,132 @@
+import hashlib
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from knowledge import KnowledgeUnavailable, search_knowledge
+from knowledge_api import router
+
+
+class Model:
+    def encode(self, text, **kwargs):
+        return SimpleNamespace(tolist=lambda: [1.0, 0.0])
+
+
+class Ranker:
+    def predict(self, pairs):
+        return [float(text) for _, text in pairs]
+
+
+class Collection:
+    def __init__(self, rows):
+        self.rows = rows
+        self.kwargs = None
+
+    def count(self):
+        return len(self.rows)
+
+    def query(self, **kwargs):
+        self.kwargs = kwargs
+        rows = self.rows
+        if "where" in kwargs:
+            rows = [row for row in rows if row[1]["doc_type"] == kwargs["where"]["doc_type"]]
+        return {"documents": [[r[0] for r in rows]], "metadatas": [[r[1] for r in rows]]}
+
+
+class KnowledgeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = Path(self.tmp.name)
+        parents = {name: {"body": f"# {name}\n完整正文，包含未命中章节", "title": name,
+                          "source": f"{name}.md", "metadata": {"id": name, "doc_type": kind}}
+                   for name, kind in [("a", "runbook"), ("b", "architecture")]}
+        payload = json.dumps(parents, ensure_ascii=False).encode("utf-8")
+        self.snapshot = hashlib.sha256(payload).hexdigest()
+        (self.directory / f"{self.snapshot}.json").write_bytes(payload)
+        self.collection = Collection([
+            (score, {"doc_id": name, "snapshot_id": self.snapshot, "section": section, "doc_type": kind})
+            for score, name, section, kind in [("0.9", "a", "原因", "runbook"),
+                                              ("0.8", "a", "验证", "runbook"),
+                                              ("0.85", "b", "流程", "architecture")]])
+
+    def search(self, **kwargs):
+        return search_knowledge(self.collection, Model(), Ranker(), self.directory, "Redis 故障", **kwargs)
+
+    def test_max_score_dedup_and_full_snapshot(self):
+        result = self.search()
+        self.assertEqual([item["doc_id"] for item in result["items"]], ["a", "b"])
+        self.assertEqual(result["items"][0]["score"], 0.9)
+        self.assertEqual(result["items"][0]["matched_sections"], ["原因", "验证"])
+        self.assertIn("未命中章节", result["items"][0]["content"])
+        self.assertNotIn("where", self.collection.kwargs)
+
+    def test_filter_and_document_limit(self):
+        result = self.search(doc_type="architecture", top_k=1)
+        self.assertEqual(result["items"][0]["doc_id"], "b")
+        self.assertEqual(self.collection.kwargs["where"], {"doc_type": "architecture"})
+        self.assertEqual(len(self.search(top_k=2)["items"]), 2)
+
+    def test_empty_and_budget(self):
+        self.assertEqual(self.search(max_content_chars=1)["items"], [])
+        self.collection.rows = []
+        self.assertEqual(self.search()["items"], [])
+
+    def test_missing_corrupt_and_unsafe_snapshot(self):
+        path = self.directory / f"{self.snapshot}.json"
+        path.write_text("{}", encoding="utf-8")
+        with self.assertRaises(KnowledgeUnavailable):
+            self.search()
+        path.unlink()
+        with self.assertRaises(KnowledgeUnavailable):
+            self.search()
+        for _, meta in self.collection.rows:
+            meta["snapshot_id"] = "../../elsewhere"
+        with self.assertRaises(KnowledgeUnavailable):
+            self.search()
+
+    def test_http(self):
+        app = FastAPI()
+        app.include_router(router, prefix="/api/v1")
+        app.state.model = Model()
+        app.state.reranker = Ranker()
+        app.state.client = SimpleNamespace(get_collection=lambda name: self.collection)
+        app.state.knowledge_snapshot_dir = self.directory
+        with TestClient(app) as client:
+            response = client.post("/api/v1/knowledge/search", json={"query": "Redis", "doc_type": "runbook"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(len(response.json()["items"]), 1)
+            for body in [{"query": "  "}, {"query": "x", "doc_type": "invalid"},
+                         {"query": "x", "top_k": 0}, {"query": "x", "top_k": 6},
+                         {"query": "x", "component": "redis"}]:
+                self.assertEqual(client.post("/api/v1/knowledge/search", json=body).status_code, 422)
+            del app.state.model
+            self.assertEqual(client.post("/api/v1/knowledge/search", json={"query": "x"}).status_code, 503)
+
+    def test_real_chroma_filter_and_empty_match(self):
+        import chromadb
+        client = chromadb.EphemeralClient()
+        collection = client.create_collection("knowledge-test-filter")
+        try:
+            collection.add(ids=["one", "two", "three"],
+                           documents=[row[0] for row in self.collection.rows],
+                           metadatas=[row[1] for row in self.collection.rows],
+                           embeddings=[[1.0, 0.0]] * 3)
+            result = search_knowledge(collection, Model(), Ranker(), self.directory,
+                                      "query", doc_type="architecture")
+            self.assertEqual([item["doc_id"] for item in result["items"]], ["b"])
+            collection.delete(ids=["three"])
+            result = search_knowledge(collection, Model(), Ranker(), self.directory,
+                                      "query", doc_type="architecture")
+            self.assertEqual(result["items"], [])
+        finally:
+            client.delete_collection("knowledge-test-filter")
+
+
+if __name__ == "__main__":
+    unittest.main()
