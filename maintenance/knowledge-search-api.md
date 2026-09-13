@@ -15,7 +15,7 @@
 | 参数 | 规则 |
 |---|---|
 | query | 必填，去除首尾空白后非空，输入最大 2000 字符 |
-| doc_type | 可选 architecture/runbook；省略或 null 检索两类；无结果不放宽过滤 |
+| doc_type | 可选 architecture/runbook/technology；省略或 null 检索全部三类；无结果不放宽过滤 |
 | top_k | 父文档数量，默认 3，范围 1–5，必须为整数 |
 
 未声明字段（包括 component、type）会返回 422，避免误以为过滤生效。

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class KnowledgeSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
-    doc_type: Literal["architecture", "runbook"] | None = None
+    doc_type: Literal["architecture", "runbook", "technology"] | None = None
     top_k: int = Field(default=3, ge=1, le=5, strict=True)
 
     @field_validator("query")
@@ -31,7 +31,7 @@ class KnowledgeItem(BaseModel):
     doc_id: str
     snapshot_id: str
     title: str
-    doc_type: Literal["architecture", "runbook"]
+    doc_type: Literal["architecture", "runbook", "technology"]
     source: str
     score: float
     matched_sections: list[str]

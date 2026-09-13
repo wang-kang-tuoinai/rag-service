@@ -27,7 +27,7 @@ def parse_document(path: Path, root: Path) -> dict:
     for key in REQUIRED:
         if not isinstance(metadata.get(key), str) or not metadata[key].strip():
             raise ValueError(f"{path}: {key} 必须是非空字符串")
-    if metadata["doc_type"] not in {"architecture", "runbook"}:
+    if metadata["doc_type"] not in {"architecture", "runbook", "technology"}:
         raise ValueError(f"{path}: 不支持的 doc_type")
     for key, value in metadata.items():
         if not isinstance(key, str) or key in RESERVED:
@@ -82,7 +82,6 @@ def split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
         raise ValueError("文档必须有一级标题和非空章节正文")
     return title, sections
 
-# TODO doc_id和id字段重复
 def prepare(root: Path) -> tuple[dict, list[dict]]:
     """遍历目录下所有 Markdown 文档，执行解析、去重校验、章节切分并组装向量库切片数据。"""
     parents, chunks = {}, []

@@ -1,5 +1,7 @@
 # 维护文档
 
+- [Redis 技术语料来源](redis-sources.md)
+
 - [知识查询接口](knowledge-search-api.md)
 
 - [运维知识入库说明](ingestion.md)

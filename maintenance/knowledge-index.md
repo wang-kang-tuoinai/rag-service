@@ -1,6 +1,6 @@
 # 项目知识文档（首批）
 
-本目录按用户要求使用 `doc/`，与已有 `docs/` 并存。包含 2 篇业务架构文档与 8 篇排查手册，依据 2026-09-11 当前工作区代码核对，不包含第三类官方技术文档。
+知识正文位于 `doc/`，与已有 `docs/` 并存。包含 2 篇业务架构文档、8 篇排查手册和 5 篇 Redis 技术知识。业务文档依据 2026-09-11 代码核对；技术资料来源另见维护记录。
 
 ## 项目架构
 
@@ -19,6 +19,16 @@
 - [依赖节点不慢但接口耗时高](../doc/runbooks/unexplained-latency.md)
 
 ## 元数据与使用边界
+
+Redis 技术知识：
+
+- [客户端延迟与服务端延迟](../doc/technology/redis/latency-diagnosis.md)
+- [慢日志含义与边界](../doc/technology/redis/slowlog.md)
+- [大键识别与处理](../doc/technology/redis/large-keys.md)
+- [过期与内存淘汰](../doc/technology/redis/expiration-eviction.md)
+- [持久化延迟](../doc/technology/redis/persistence-latency.md)
+
+技术文档使用 doc_type=technology，service=common，保留 version 和 source_url；详细来源及校正记录见 [Redis 来源清单](redis-sources.md)。
 
 正文 front matter 保留 id、doc_type、project、service、component、deployment。源码依据、核对日期和验证状态集中记录在 [知识库维护清单](knowledge-maintenance.md)。
 

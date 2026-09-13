@@ -62,7 +62,7 @@ def search_knowledge(collection, model, reranker, snapshot_dir: Path, query: str
     for meta, raw_score in zip(metadata, scores):
         if any(not isinstance(meta.get(k), str) or not meta[k] for k in ("doc_id", "snapshot_id", "section", "doc_type")):
             raise KnowledgeUnavailable("章节缺少父文档关联字段")
-        if meta["doc_type"] not in {"architecture", "runbook"} or (doc_type and meta["doc_type"] != doc_type):
+        if meta["doc_type"] not in {"architecture", "runbook", "technology"} or (doc_type and meta["doc_type"] != doc_type):
             raise KnowledgeUnavailable("章节文档类型与过滤条件不一致")
         score = float(raw_score)
         if not math.isfinite(score):
