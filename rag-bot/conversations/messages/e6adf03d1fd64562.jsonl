@@ -1,2 +1,0 @@
-{"role": "user", "content": "go里面，接口怎么命名", "timestamp": 1787144026, "references": []}
-{"role": "assistant", "content": "根据资料，Go 中接口的命名通常来自于实现它的方法，例如 `io.Writer` 就是实现了 `Write` 方法的一类对象 [3]。此外，仅包含一两种方法的接口很常见，其名称通常来源于实现它的方法 [3]。资料中没有提供更多关于接口命名的具体规则。", "timestamp": 1787144038, "references": []}

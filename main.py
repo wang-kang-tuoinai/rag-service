@@ -3,10 +3,11 @@ from contextlib import asynccontextmanager
 from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 import chromadb
+from chromadb.errors import NotFoundError
 import asyncio
 import logging
-import api
 import knowledge_api
+from knowledge import COLLECTION
 from pathlib import Path
 
 from opentelemetry import trace
@@ -42,16 +43,20 @@ async def lifespan(app: FastAPI):
     model, reranker, client = await asyncio.gather(
         model_task, reranker_task, client_task
     )
-    collection = await asyncio.to_thread(client.get_collection, "go_docs")
+    try:
+        collection = await asyncio.to_thread(client.get_collection, COLLECTION)
+    except NotFoundError as exc:
+        raise RuntimeError(f"{COLLECTION} 索引不存在，请先运行 ingest.py 完成入库") from exc
 
     # 挂到 app.state 上，路由里用 request.app.state.xxx 访问
     app.state.model = model
     app.state.reranker = reranker
-    app.state.client = client
     app.state.collection = collection
     app.state.knowledge_snapshot_dir = db_path / "ops_knowledge_parents"
-    yield
-    tracer_provider.shutdown()
+    try:
+        yield
+    finally:
+        tracer_provider.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -61,8 +66,8 @@ FastAPIInstrumentor.instrument_app(app)
 # 就绪探针：只有 lifespan 加载完模型、Uvicorn 开始服务后才会响应
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": hasattr(app.state, "model")}
+    return {"status": "ok", "model_loaded": hasattr(app.state, "model"),
+            "collection_loaded": hasattr(app.state, "collection")}
 
-app.include_router(api.v1_router, prefix="/api/v1",tags=["v1"])
 app.include_router(knowledge_api.router, prefix="/api/v1", tags=["knowledge"])
 

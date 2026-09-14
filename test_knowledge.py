@@ -150,7 +150,7 @@ class KnowledgeTests(unittest.TestCase):
         app.include_router(router, prefix="/api/v1")
         app.state.model = Model()
         app.state.reranker = Ranker()
-        app.state.client = SimpleNamespace(get_collection=lambda name: self.collection)
+        app.state.collection = self.collection
         app.state.knowledge_snapshot_dir = self.directory
         with TestClient(app) as client:
             response = client.post("/api/v1/knowledge/search", json={"query": "Redis", "doc_type": "runbook"})

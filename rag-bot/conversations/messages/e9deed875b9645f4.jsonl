@@ -1,2 +1,0 @@
-{"role": "user", "content": "go里面，接口怎么命名", "timestamp": 1787197242, "references": []}
-{"role": "assistant", "content": "根据资料，Go 中接口命名的约定是：只包含一个方法的接口应当以该方法的名称加上 `-er` 后缀来命名，例如 `Reader`、`Writer`、`Formatter`、`CloseNotifier` 等 [1]。同时，应遵循这些约定及其代表的函数名，避免与已知的典型签名和意义冲突；若你的类型实现的方法与众所周知类型的方法含义相同，则使用相同的命名 [2]。此外，Go 中的命名约定使用 `MixedCaps` 或 `mixedCaps` 而不是下划线来编写多个单词组成的命名 [2]。", "timestamp": 1787197253, "references": []}

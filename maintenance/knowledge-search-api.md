@@ -82,13 +82,15 @@ technology 直接返回 Chroma documents 中保存的文本（文档标题 + 章
 
 - 200：完成查询；空集合、过滤无候选或预算省略可返回 items=[]，区别见 notices。
 - 422：参数非法。
-- 503：模型依赖未就绪、ops_knowledge 不存在、快照缺失/损坏、索引不一致或查询失败。响应为 {"detail":"说明"}。
+- 503：查询依赖未就绪、运行中索引已不可用、快照缺失/损坏、索引不一致或查询失败。响应为 {"detail":"说明"}。启动时缺少 ops_knowledge 会直接导致启动失败并提示先入库。
 
 当前不设相关性阈值，不承诺每次返回的候选都能回答；需要后续用实际查询校准。沿用现有 reranker 的输入长度设置，过长 query/章节组合可能受其截断限制，后续评测需关注。应在入库完成后查询，构建不是原子切换。
 
 ## 运行
 
-先完成 ingest.py 的实际入库（dry-run 不生成索引），再运行原有 rag-service 服务。接口在 FastAPI /docs 中可测试。main.py 仍沿用现有 go_docs 的启动加载要求；部署时旧问答索引也需存在。新接口不会创建空集合掩盖缺失索引。
+先完成 ingest.py 的实际入库（dry-run 不生成索引），再启动 rag-service。接口在 FastAPI /docs 中可测试。main.py 的 lifespan 加载模型和 ops_knowledge，并通过 app.state.collection 提供给查询路由；每次请求不再调用 get_collection。旧文档机器人路由已移除，服务不依赖 go_docs，也不会自动创建空集合。
+
+删除并重新创建 collection 后应重启服务，重新获取 collection。正常入库使用现有 collection 的 upsert/delete 流程；构建期间避免查询。
 
 查询与入库的 23 项回归测试通过，覆盖混合排序、同篇技术切片不设数量上限、响应模型、预算和快照异常，并用临时 Chroma 集合检查 metadata 过滤及切片 ID。
 

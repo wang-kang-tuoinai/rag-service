@@ -4,7 +4,7 @@ import logging
 from chromadb.errors import NotFoundError
 from fastapi import APIRouter, HTTPException, Request
 
-from knowledge import COLLECTION, KnowledgeUnavailable, search_knowledge
+from knowledge import KnowledgeUnavailable, search_knowledge
 from knowledge_models import KnowledgeSearchRequest, KnowledgeSearchResponse
 
 router = APIRouter()
@@ -15,15 +15,14 @@ logger = logging.getLogger(__name__)
 def query_knowledge(params: KnowledgeSearchRequest, request: Request):
     # 同步路由由 FastAPI 在线程池执行，模型推理不阻塞事件循环。
     state = request.app.state
-    if not all(hasattr(state, key) for key in ("client", "model", "reranker")):
+    if not all(hasattr(state, key) for key in ("collection", "model", "reranker")):
         raise HTTPException(503, "知识检索依赖尚未就绪")
     try:
-        collection = state.client.get_collection(COLLECTION)
-        return search_knowledge(collection, state.model, state.reranker,
+        return search_knowledge(state.collection, state.model, state.reranker,
                                 getattr(state, "knowledge_snapshot_dir", None), params.query,
                                 params.doc_type, params.top_k)
     except NotFoundError as exc:
-        raise HTTPException(503, "ops_knowledge 索引不存在，请先运行 ingest.py") from exc
+        raise HTTPException(503, "ops_knowledge 索引已不可用，请确认索引存在后重启服务") from exc
     except KnowledgeUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
