@@ -2,7 +2,7 @@
 
 ingest.py 默认读取与脚本同目录的 doc/，跳过 README.md，不再导入旧 docs/。旧 go_docs collection 不会被修改。
 
-当前知识查询接口仍按父文档返回。技术文档的新索引没有 snapshot_id；应先完成查询端 technology 直接返回 chunk 的分支，再重建正式索引。当前可以先运行 dry-run 校验。
+知识查询接口已支持两种结果：architecture/runbook 读取父文档快照，technology 直接返回切片，不要求 snapshot_id。请求和响应见 knowledge-search-api.md。
 
 ## 使用
 

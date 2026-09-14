@@ -4,12 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from knowledge import KnowledgeUnavailable, search_knowledge
 from knowledge_api import router
+from knowledge_models import KnowledgeSearchResponse
 
 
 class Model:
@@ -35,7 +37,8 @@ class Collection:
         rows = self.rows
         if "where" in kwargs:
             rows = [row for row in rows if row[1]["doc_type"] == kwargs["where"]["doc_type"]]
-        return {"documents": [[r[0] for r in rows]], "metadatas": [[r[1] for r in rows]]}
+        return {"documents": [[r[0] for r in rows]], "metadatas": [[r[1] for r in rows]],
+                "ids": [[f"{r[1]['doc_id']}::{r[1].get('chunk_index', r[1]['section'])}" for r in rows]]}
 
 
 class KnowledgeTests(unittest.TestCase):
@@ -57,6 +60,53 @@ class KnowledgeTests(unittest.TestCase):
 
     def search(self, **kwargs):
         return search_knowledge(self.collection, Model(), Ranker(), self.directory, "Redis 故障", **kwargs)
+
+    def technology_row(self, score, index=0):
+        return (str(score), {"doc_id": "redis-tech", "doc_type": "technology", "title": "Redis 延迟",
+                            "source": "technology/redis/latency.md", "source_url": "https://example.com/redis",
+                            "component": "redis", "section": "测量延迟", "chunk_index": index})
+
+    def test_mixed_candidates_ranked_after_document_aggregation(self):
+        self.collection.rows[2] = ('0.82', self.collection.rows[2][1])
+        self.collection.rows += [self.technology_row(0.88, 0), self.technology_row(0.85, 1)]
+        result = self.search()
+        self.assertEqual([item['score'] for item in result['items']], [0.90, 0.88, 0.85])
+        self.assertEqual([item['content_mode'] for item in result['items']], ['full', 'chunk', 'chunk'])
+        self.assertEqual(result['items'][0]['matched_sections'], ['原因', '验证'])
+        self.assertEqual(result['items'][1]['chunk_id'], 'redis-tech::0')
+        self.assertEqual(result['items'][1]['content'], '0.88')
+        self.assertNotIn('snapshot_id', result['items'][1])
+        self.assertNotIn('matched_sections', result['items'][1])
+        self.assertNotIn('chunk_id', result['items'][0])
+        KnowledgeSearchResponse.model_validate(result)
+
+    def test_three_chunks_from_same_document_no_parent_access(self):
+        self.collection.rows = [self.technology_row(0.9 - i / 10, i) for i in range(4)]
+        with patch('knowledge.load_parent', side_effect=AssertionError('不应读取父文档')):
+            result = search_knowledge(self.collection, Model(), Ranker(), None, 'Redis', doc_type='technology')
+        self.assertEqual([item['chunk_index'] for item in result['items']], [0, 1, 2])
+        self.assertEqual(self.collection.kwargs['where'], {'doc_type': 'technology'})
+
+    def test_technology_fields_and_scores_validated(self):
+        for field in ('source_url', 'component', 'title', 'source', 'chunk_index'):
+            row = self.technology_row(0.9)
+            del row[1][field]
+            self.collection.rows = [row]
+            with self.subTest(field=field), self.assertRaises(KnowledgeUnavailable):
+                self.search()
+        self.collection.rows = [self.technology_row('nan')]
+        with self.assertRaisesRegex(KnowledgeUnavailable, '分数'):
+            self.search()
+
+    def test_chunk_dedup_ties_and_selected_results_budget(self):
+        self.collection.rows = [self.technology_row(0.9, 2), self.technology_row(0.9, 1),
+                                self.technology_row(0.9, 1), self.technology_row(0.8, 0)]
+        self.assertEqual([item['chunk_index'] for item in self.search()['items']], [1, 2, 0])
+        # 先确定 top_k，预算不足整条省略，不以低分结果补位，也不截断正文。
+        self.collection.rows = [('0.900000', self.technology_row(0.9)[1]), self.technology_row(0.8, 1)]
+        result = self.search(top_k=1, max_content_chars=4)
+        self.assertEqual(result['items'], [])
+        self.assertTrue(any('整条省略' in notice for notice in result['notices']))
 
     def test_max_score_dedup_and_full_snapshot(self):
         result = self.search()
@@ -106,6 +156,20 @@ class KnowledgeTests(unittest.TestCase):
             response = client.post("/api/v1/knowledge/search", json={"query": "Redis", "doc_type": "runbook"})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(len(response.json()["items"]), 1)
+            self.collection.rows.append(self.technology_row(0.88))
+            response = client.post('/api/v1/knowledge/search', json={'query': 'Redis'})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([item['content_mode'] for item in response.json()['items']], ['full', 'chunk', 'full'])
+            schema = client.get('/openapi.json').json()['components']['schemas']
+            item_schema = schema['KnowledgeSearchResponse']['properties']['items']['items']
+            self.assertEqual(item_schema['discriminator']['propertyName'], 'content_mode')
+            self.assertEqual(set(item_schema['discriminator']['mapping']), {'full', 'chunk'})
+            del app.state.knowledge_snapshot_dir
+            response = client.post('/api/v1/knowledge/search', json={'query': 'Redis', 'doc_type': 'technology'})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertNotIn('snapshot_id', response.json()['items'][0])
+            self.assertEqual(client.post('/api/v1/knowledge/search', json={'query': 'Redis', 'doc_type': 'runbook'}).status_code, 503)
+            app.state.knowledge_snapshot_dir = self.directory
             for body in [{"query": "  "}, {"query": "x", "doc_type": "invalid"},
                          {"query": "x", "top_k": 0}, {"query": "x", "top_k": 6},
                          {"query": "x", "component": "redis"}]:
@@ -125,6 +189,12 @@ class KnowledgeTests(unittest.TestCase):
             result = search_knowledge(collection, Model(), Ranker(), self.directory,
                                       "query", doc_type="architecture")
             self.assertEqual([item["doc_id"] for item in result["items"]], ["b"])
+            technology = self.technology_row(0.95)
+            collection.add(ids=['actual-chroma-id'], documents=[technology[0]], metadatas=[technology[1]],
+                           embeddings=[[1.0, 0.0]])
+            result = search_knowledge(collection, Model(), Ranker(), None, 'query', doc_type='technology')
+            self.assertEqual(result['items'][0]['chunk_id'], 'actual-chroma-id')
+            self.assertNotIn('snapshot_id', result['items'][0])
             collection.delete(ids=["three"])
             result = search_knowledge(collection, Model(), Ranker(), self.directory,
                                       "query", doc_type="architecture")
