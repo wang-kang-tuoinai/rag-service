@@ -1,4 +1,5 @@
 ---
+id: technology-mysql-replication
 doc_type: technology
 component: mysql
 source_url: https://github.com/AlibabaP8Developer/knowledge/blob/master/docs/database/MySQL%E8%BF%90%E7%BB%B4%E7%AF%87/MySQL%E8%BF%90%E7%BB%B4%E7%AF%87.md

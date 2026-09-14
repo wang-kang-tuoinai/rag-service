@@ -1,4 +1,5 @@
 ---
+id: technology-mysql-sharding
 doc_type: technology
 component: mysql
 source_url: https://github.com/AlibabaP8Developer/knowledge/blob/master/docs/database/MySQL%E8%BF%90%E7%BB%B4%E7%AF%87/MySQL%E8%BF%90%E7%BB%B4%E7%AF%87.md
@@ -125,14 +126,7 @@ logs：存放mycat的日志文件
 <?xml version="1.0"?>
 <!DOCTYPE mycat:schema SYSTEM "schema.dtd">
 <mycat:schema xmlns:mycat="http://io.mycat/">
-
-	<!--逻辑库-->
 	<schema name="dcp" checkSQLschema="true" sqlMaxLimit="100">
-		<!--逻辑表
-		rule：分片规则
-		插入数据在dataNode节点进行分布，取决于rule
-		引用rule.xml值
-		-->
 		<table name="tb_order" dataNode="dn1,dn2,dn3" rule="auto-sharding-long" />
 	</schema>
 
@@ -140,35 +134,11 @@ logs：存放mycat的日志文件
 	<dataNode name="dn2" dataHost="dhost2" database="dcp" />
 	<dataNode name="dn3" dataHost="dhost3" database="dcp" />
 
-	<!--节点主机
-		dbDriver：native (MySQL8.0不支持)、jdbc
-	-->
-	<dataHost name="dhost1" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
+	<dataHost name="dhost1" maxCon="1000" minCon="10" balance="0" writeType="0" dbType="mysql" dbDriver="jdbc">
 		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.102:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
+		<writeHost host="master" url="jdbc:mysql://192.168.10.102:3306/dcp" user="root" password="1234" />
 	</dataHost>
-	
-	<dataHost name="dhost2" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
-		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.103:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
-	</dataHost>
-	
-	<dataHost name="dhost3" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
-		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.104:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
-	</dataHost>
+	<!-- dhost2 (103) 与 dhost3 (104) 配置同理，此处略 -->
 </mycat:schema>
 ```
 
@@ -336,66 +306,23 @@ server.xml配置文件包含了MyCat的系统配置信息，主要有两个重�
 <?xml version="1.0"?>
 <!DOCTYPE mycat:schema SYSTEM "schema.dtd">
 <mycat:schema xmlns:mycat="http://io.mycat/">
-
-	<!--逻辑库-->
+	<!-- 垂直拆分：不同业务表映射到不同数据节点 (dn1/dn2/dn3) -->
 	<schema name="shopping" checkSQLschema="true" sqlMaxLimit="100">
-		<!--逻辑表
-		rule：分片规则 [分表时用]
-		插入数据在dataNode节点进行分布，取决于rule
-		引用rule.xml值
-		<table name="tb_order" dataNode="dn1,dn2,dn3" rule="auto-sharding-long" />
-		-->
 		<table name="tb_goods_base" dataNode="dn1" primaryKey="id" />
-		<table name="tb_goods_brand" dataNode="dn1" primaryKey="id" />
-		<table name="tb_goods_cat" dataNode="dn1" primaryKey="id" />
-		<table name="tb_goods_desc" dataNode="dn1" primaryKey="goods_id" />
-		<table name="tb_goods_item" dataNode="dn1" primaryKey="id" />
-		
-		<table name="tb_order_item" dataNode="dn2" primaryKey="id" />
 		<table name="tb_order_master" dataNode="dn2" primaryKey="order_id" />
-		<table name="tb_order_pay_log" dataNode="dn2" primaryKey="out_trade_no" />
-		
 		<table name="tb_user" dataNode="dn3" primaryKey="id" />
-		<table name="tb_user_address" dataNode="dn3" primaryKey="id" />
 		<table name="tb_areas_provinces" dataNode="dn3" primaryKey="id" />
-		<table name="tb_areas_city" dataNode="dn3" primaryKey="id" />
-		<table name="tb_areas_region" dataNode="dn3" primaryKey="id" />
-		
 	</schema>
 
 	<dataNode name="dn1" dataHost="dhost1" database="shopping" />
 	<dataNode name="dn2" dataHost="dhost2" database="shopping" />
 	<dataNode name="dn3" dataHost="dhost3" database="shopping" />
 
-	<!--节点主机
-		dbDriver：native (MySQL8.0不支持)、jdbc
-	-->
-	<dataHost name="dhost1" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
+	<dataHost name="dhost1" maxCon="1000" minCon="10" balance="0" writeType="0" dbType="mysql" dbDriver="jdbc">
 		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.102:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
+		<writeHost host="master" url="jdbc:mysql://192.168.10.102:3306/shopping" user="root" password="1234" />
 	</dataHost>
-	
-	<dataHost name="dhost2" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
-		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.103:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
-	</dataHost>
-	
-	<dataHost name="dhost3" maxCon="1000" minCon="10" balance="0"
-			  writeType="0" dbType="mysql" dbDriver="jdbc" switchType="1"  slaveThreshold="100">
-		<heartbeat>select user()</heartbeat>
-
-		<!--数据库连接信息-->
-		<writeHost host="master" url="jdbc:mysql://192.168.10.104:3306?useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;characterEncoding=utf8" user="root"
-				   password="1234" />
-	</dataHost>
+	<!-- dhost2 (103) 与 dhost3 (104) 配置同理，此处略 -->
 </mycat:schema>
 ```
 
@@ -449,22 +376,17 @@ CREATE TABLE tb_log (
   model_name varchar(200) DEFAULT NULL COMMENT '模块名',
   model_value varchar(200) DEFAULT NULL COMMENT '模块值',
   return_value varchar(200) DEFAULT NULL COMMENT '返回值',
-  return_class varchar(200) DEFAULT NULL COMMENT '返回值类型',
   operate_user varchar(20) DEFAULT NULL COMMENT '操作用户',
   operate_time varchar(20) DEFAULT NULL COMMENT '操作时间',
-  param_and_value varchar(500) DEFAULT NULL COMMENT '请求参数名及参数值',
-  operate_class varchar(200) DEFAULT NULL COMMENT '操作类',
-  operate_method varchar(200) DEFAULT NULL COMMENT '操作方法',
   cost_time bigint(20) DEFAULT NULL COMMENT '执行方法耗时, 单位 ms',
   source int(1) DEFAULT NULL COMMENT '来源 : 1 PC , 2 Android , 3 IOS',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('1','user','insert','success','java.lang.String','10001','2022-01-06 18:12:28','{\"age\":\"20\",\"name\":\"Tom\",\"gender\":\"1\"}','cn.itcast.controller.UserController','insert','10',1);
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('2','user','insert','success','java.lang.String','10001','2022-01-06 18:12:27','{\"age\":\"20\",\"name\":\"Tom\",\"gender\":\"1\"}','cn.itcast.controller.UserController','insert','23',1);
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('3','user','update','success','java.lang.String','10001','2022-01-06 18:16:45','{\"age\":\"20\",\"name\":\"Tom\",\"gender\":\"1\"}','cn.itcast.controller.UserController','update','34',1);
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('4','user','update','success','java.lang.String','10001','2022-01-06 18:16:45','{\"age\":\"20\",\"name\":\"Tom\",\"gender\":\"1\"}','cn.itcast.controller.UserController','update','13',2);
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('5','user','insert','success','java.lang.String','10001','2022-01-06 18:30:31','{\"age\":\"200\",\"name\":\"TomCat\",\"gender\":\"0\"}','cn.itcast.controller.UserController','insert','29',3);
-INSERT INTO tb_log (id, model_name, model_value, return_value, return_class, operate_user, operate_time, param_and_value, operate_class, operate_method, cost_time，source) VALUES('6','user','find','success','java.lang.String','10001','2022-01-06 18:30:31','{\"age\":\"200\",\"name\":\"TomCat\",\"gender\":\"0\"}','cn.itcast.controller.UserController','find','29',2);
+
+-- 插入多条日志数据测试分片分布
+INSERT INTO tb_log (id, model_name, operate_user, operate_time, source) VALUES('1','user','10001','2022-01-06 18:12:28', 1);
+INSERT INTO tb_log (id, model_name, operate_user, operate_time, source) VALUES('2','user','10001','2022-01-06 18:12:27', 1);
+-- 后续 3~6 号测试记录同理，此处略
 ```
 
 ### 分片规则-范围

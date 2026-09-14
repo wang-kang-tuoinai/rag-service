@@ -32,6 +32,37 @@ deployment: docker-compose
 
 
 class IngestTests(unittest.TestCase):
+    def test_explicit_technology_ids_share_source_and_remain_stable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('indexes', 'locks'):
+                header = TECH_HEADER.replace('doc_type:', f'id: technology-mysql-{name}\ndoc_type:')
+                (root / f'{name}.md').write_text(header + f'# {name}\n正文', encoding='utf-8')
+            parents, chunks = prepare(root, CharacterTokenizer(), 100)
+            self.assertEqual(parents, {})
+            self.assertEqual({c['metadata']['doc_id'] for c in chunks},
+                             {'technology-mysql-indexes', 'technology-mysql-locks'})
+            self.assertEqual(len({c['metadata']['source_url'] for c in chunks}), 1)
+            self.assertTrue(all('id' not in c['metadata'] for c in chunks))
+            old = root / 'indexes.md'
+            renamed = root / 'renamed.md'
+            old.rename(renamed)
+            renamed.write_text(renamed.read_text(encoding='utf-8').replace('# indexes', '# 新标题'), encoding='utf-8')
+            self.assertIn('technology-mysql-indexes::section::0',
+                          {c['id'] for c in prepare(root, CharacterTokenizer(), 100)[1]})
+            (root / 'duplicate.md').write_text(renamed.read_text(encoding='utf-8'), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '重复文档 id'):
+                prepare(root, CharacterTokenizer(), 100)
+
+    def test_invalid_optional_technology_id_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for value in ('null', '123', '"   "', '[]'):
+                header = TECH_HEADER.replace('doc_type:', f'id: {value}\ndoc_type:')
+                (root / 'one.md').write_text(header + '# 标题\n正文', encoding='utf-8')
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'id 必须'):
+                    prepare(root, CharacterTokenizer(), 100)
+
     def test_technology_minimal_metadata_stable_id_and_duplicate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

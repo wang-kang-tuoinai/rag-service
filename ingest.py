@@ -40,6 +40,10 @@ def parse_document(path: Path, root: Path) -> dict:
     for key in required:
         if not isinstance(metadata.get(key), str) or not metadata[key].strip():
             raise ValueError(f"{path}: {key} 必须是非空字符串")
+    if "id" in metadata:
+        if not isinstance(metadata["id"], str) or not metadata["id"].strip():
+            raise ValueError(f"{path}: id 必须是非空字符串")
+        metadata["id"] = metadata["id"].strip()
     if metadata["doc_type"] not in {"architecture", "runbook", "technology"}:
         raise ValueError(f"{path}: 不支持的 doc_type")
     if metadata["doc_type"] == "technology":
@@ -82,7 +86,10 @@ def prepare_technology_document(doc, tokenizer, max_tokens, overlap_ratio=0.12):
     if tokenizer is None or max_tokens is None:
         raise ValueError("技术文档切分需要 tokenizer 和 max_tokens")
     title, sections = split_sections(doc["body"])
-    doc_id = "technology-" + hashlib.sha256(doc["metadata"]["source_url"].encode("utf-8")).hexdigest()
+    # 同一来源拆成多份本地文档时使用各自的显式 ID；其余文档兼容原 URL ID。
+    doc_id = doc["metadata"].get("id") or (
+        "technology-" + hashlib.sha256(doc["metadata"]["source_url"].encode("utf-8")).hexdigest()
+    )
     pieces = []
     for section, content in sections:
         pieces.extend(split_long_section(title, section, content, tokenizer, max_tokens, overlap_ratio))
@@ -110,7 +117,7 @@ def prepare(root: Path, tokenizer=None, max_tokens=None, overlap_ratio=0.12) -> 
             parent, items = prepare_project_document(doc)
         doc_id = items[0]["metadata"]["doc_id"]
         if doc_id in seen_doc_ids:
-            raise ValueError(f"重复文档 id: {doc_id} ({path})")
+            raise ValueError(f"重复文档 id: {doc_id} ({path})；同一来源拆成多个文件时，请在各文件头指定唯一 id")
         seen_doc_ids.add(doc_id)
         if parent is not None:
             parents[doc_id] = parent

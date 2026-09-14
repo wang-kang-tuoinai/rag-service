@@ -1,4 +1,5 @@
 ---
+id: technology-mysql-indexes
 doc_type: technology
 component: mysql
 source_url: https://github.com/AlibabaP8Developer/knowledge/blob/master/docs/database/MySQL%E8%BF%9B%E9%98%B6%E7%AF%87/MySQL%E8%BF%9B%E9%98%B6%E7%AF%87.md
