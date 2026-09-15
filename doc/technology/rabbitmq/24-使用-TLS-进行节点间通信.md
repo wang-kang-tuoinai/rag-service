@@ -186,205 +186,66 @@ RabbitMQ 节点接受来自 客户端 的连接，同时也接受来自 对等�
 
 下一步是在前一个示例的基础上，为节点间 TLS 连接启用安全重协商。虽然这是可选的，但强烈建议这样做。同样的 `-ssl_dist_opt` 可用于启用更多 TLS 相关设置。本示例不再赘述
 
-  * bash
-  * PowerShell
+```bash
+SERVER_ADDITIONAL_ERL_ARGS="-pa $ERL_SSL_PATH \
+  -proto_dist inet_tls \
+  -ssl_dist_opt server_certfile /path/to/combined_keys.pem \
+  -ssl_dist_opt server_password password \
+  -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"
+```
 
-
-    
-    
-    # -pa $ERL_SSL_PATH prepends the directory ERL_SSL_PATH points at to the code path  
-    
-    
-    # -proto_dist inet_tls tells the runtime to encrypt inter-node communication  
-    
-    
-    # -ssl_dist_opt server_certfile /path/to/combined_keys.pem tells the runtime  
-    
-    
-    #                               where to find the combined certificate/key file  
-    
-    
-    # -ssl_dist_opt server_password password   required if the private key is encrypted  
-    
-    
-    # -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true enables an additional TLS setting: secure renegotiation  
-    
-    
-    SERVER_ADDITIONAL_ERL_ARGS="-pa $ERL_SSL_PATH \  
-    
-    
-      -proto_dist inet_tls \  
-    
-    
-      -ssl_dist_opt server_certfile /path/to/combined_keys.pem \  
-    
-    
-      -ssl_dist_opt server_password password \  
-    
-    
-      -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"  
-    
-    
-    
-    set SERVER_ADDITIONAL_ERL_ARGS=-pa %SSL_PATH% ^  
-    
-    
-        -proto_dist inet_tls ^  
-    
-    
-        -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^  
-    
-    
-        -ssl_dist_opt server_password password ^  
-    
-    
-        -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true  
+在 Windows (cmd) 环境下：
+```cmd
+set SERVER_ADDITIONAL_ERL_ARGS=-pa %SSL_PATH% ^
+    -proto_dist inet_tls ^
+    -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^
+    -ssl_dist_opt server_password password ^
+    -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true
+```  
     
 
 一旦节点配置了 TLS 节点间连接，`rabbitmqctl` 和 `rabbitmq-diagnostics` 等 CLI 工具也必须使用 TLS 与节点通信。普通的 TCP 连接将会失败。
 
 这与上面的示例使用 `SERVER_ADDITIONAL_ERL_ARGS` 的做法非常相似，但这次环境变量是 `RABBITMQ_CTL_ERL_ARGS`。它控制 CLI 工具使用的运行时标志。
 
-以下是完整的环境配置文件
+以下是完整的环境配置文件示例：
 
-  * bash
-  * PowerShell
+Linux 环境文件 `/etc/rabbitmq/rabbitmq-env.conf`：
+```bash
+ERL_SSL_PATH="/usr/lib64/erlang/lib/ssl-9.4/ebin"
 
+# 节点间 TLS 运行时参数
+SERVER_ADDITIONAL_ERL_ARGS="-pa $ERL_SSL_PATH \
+  -proto_dist inet_tls \
+  -ssl_dist_opt server_certfile /path/to/combined_keys.pem \
+  -ssl_dist_opt server_password password \
+  -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"
 
+# CLI 工具使用的 TLS 运行时参数
+RABBITMQ_CTL_ERL_ARGS="-pa $ERL_SSL_PATH \
+  -proto_dist inet_tls \
+  -ssl_dist_opt server_certfile /path/to/combined_keys.pem \
+  -ssl_dist_opt server_password password \
+  -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"
+```
 
-文件为 `/etc/rabbitmq/rabbitmq-env.conf`
-    
-    
-    # IMPORTANT:  
-    
-    
-    # the following path is system dependent (will  
-    
-    
-    # change depending on the Erlang version, distribution,  
-    
-    
-    # and installation method used). Please double check it before proceeding!  
-    
-    
-    ERL_SSL_PATH="/usr/lib64/erlang/lib/ssl-9.4/ebin"  
-    
-    
-      
-    
-    
-    # -pa $ERL_SSL_PATH prepends the directory ERL_SSL_PATH points at to the code path  
-    
-    
-    # -proto_dist inet_tls tells the runtime to encrypt inter-node communication  
-    
-    
-    # -ssl_dist_opt server_certfile /path/to/combined_keys.pem tells the runtime  
-    
-    
-    #                               where to find the combined certificate/key file  
-    
-    
-    # -ssl_dist_opt server_password password   required if the private key is encrypted  
-    
-    
-    # -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true enables an additional TLS setting: secure renegotiation  
-    
-    
-    SERVER_ADDITIONAL_ERL_ARGS="-pa $ERL_SSL_PATH \  
-    
-    
-      -proto_dist inet_tls \  
-    
-    
-      -ssl_dist_opt server_certfile /path/to/combined_keys.pem \  
-    
-    
-      -ssl_dist_opt server_password password \  
-    
-    
-      -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"  
-    
-    
-      
-    
-    
-    # Same settings as above but for CLI tools  
-    
-    
-    RABBITMQ_CTL_ERL_ARGS="-pa $ERL_SSL_PATH \  
-    
-    
-      -proto_dist inet_tls \  
-    
-    
-      -ssl_dist_opt server_certfile /path/to/combined_keys.pem \  
-    
-    
-      -ssl_dist_opt server_password password \  
-    
-    
-      -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true"  
-    
+Windows 环境文件 `%AppData%\RabbitMQ\rabbitmq-env-conf.bat`：
+```cmd
+@echo off
+set SSL_PATH="C:/Program Files/erl10.0.1/lib/ssl-9.0/ebin"
 
-文件为 `rabbitmq-env-conf.bat`，保存在 `%AppData%\RabbitMQ` 中
-    
-    
-    @echo off  
-    
-    
-    rem IMPORTANT:  
-    
-    
-    rem the following path is system dependent and will vary between Erlang versions  
-    
-    
-    rem and installation paths  
-    
-    
-    set SSL_PATH="C:/Program Files/erl10.0.1/lib/ssl-9.0/ebin"  
-    
-    
-      
-    
-    
-    set SERVER_ADDITIONAL_ERL_ARGS=-pa %SSL_PATH% ^  
-    
-    
-        -proto_dist inet_tls ^  
-    
-    
-        -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^  
-    
-    
-        -ssl_dist_opt server_password password ^  
-    
-    
-        -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true  
-    
-    
-      
-    
-    
-    rem Same as above but for CLI tools.  
-    
-    
-    rem In environment config files, the RABBITMQ_ prefix is dropped  
-    
-    
-    set CTL_ERL_ARGS=-pa %SSL_PATH% ^  
-    
-    
-        -proto_dist inet_tls ^  
-    
-    
-        -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^  
-    
-    
-        -ssl_dist_opt server_password password ^  
-    
-    
-        -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true  
+set SERVER_ADDITIONAL_ERL_ARGS=-pa %SSL_PATH% ^
+    -proto_dist inet_tls ^
+    -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^
+    -ssl_dist_opt server_password password ^
+    -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true
+
+set CTL_ERL_ARGS=-pa %SSL_PATH% ^
+    -proto_dist inet_tls ^
+    -ssl_dist_opt server_certfile C:/Path/To/combined_keys.pem ^
+    -ssl_dist_opt server_password password ^
+    -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true
+```  
     
 
 ## 策略二（使用单个 TLS 选项文件）

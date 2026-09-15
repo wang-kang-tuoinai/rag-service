@@ -722,10 +722,10 @@ Java 客户端中的所有 TLS 相关设置均通过 ConnectionFactory 进行配
 ### 启用对等方验证后连接
 
 为了让 Java 客户端信任服务器，服务器证书必须添加到将用于实例化 信任管理器 的信任存储中。JDK 附带了一个名为 `keytool` 的工具，用于管理证书存储。要将证书导入存储，请使用 `keytool -import`：
-    
-    
-    keytool -import -alias server1 -file /path/to/server_certificate.pem -keystore /path/to/rabbitstore  
-    
+
+```bash
+keytool -import -alias server1 -file /path/to/server_certificate.pem -keystore /path/to/rabbitstore
+```
 
 上述命令将使用 JKS 格式将 `server/certificate.pem` 导入到 `rabbitstore` 文件中。证书在信任存储中将被引用为 `server1`。所有证书和密钥在存储中必须具有唯一的名称。
 
@@ -734,156 +734,40 @@ Java 客户端中的所有 TLS 相关设置均通过 ConnectionFactory 进行配
 然后使用 `PKCS#12` 文件中的客户端证书和密钥。请注意，Java 原生理解 `PKCS#12` 格式，无需转换。
 
 以下示例演示了密钥存储和信任存储如何分别与密钥管理器和信任管理器一起使用。
-    
-    
-    import java.io.*;  
-    
-    
-    import java.security.*;  
-    
-    
-    import javax.net.ssl.*;  
-    
-    
-      
-    
-    
-    import com.rabbitmq.client.*;  
-    
-    
-      
-    
-    
-    public class Example2 {  
-    
-    
-      
-    
-    
-        public static void main(String[] args) throws Exception {  
-    
-    
-          char[] keyPassphrase = "MySecretPassword".toCharArray();  
-    
-    
-          KeyStore ks = KeyStore.getInstance("PKCS12");  
-    
-    
-          ks.load(new FileInputStream("/path/to/client_key.p12"), keyPassphrase);  
-    
-    
-      
-    
-    
-          KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");  
-    
-    
-          kmf.init(ks, keyPassphrase);  
-    
-    
-      
-    
-    
-          char[] trustPassphrase = "rabbitstore".toCharArray();  
-    
-    
-          KeyStore tks = KeyStore.getInstance("JKS");  
-    
-    
-          tks.load(new FileInputStream("/path/to/trustStore"), trustPassphrase);  
-    
-    
-      
-    
-    
-          TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");  
-    
-    
-          tmf.init(tks);  
-    
-    
-      
-    
-    
-          SSLContext c = SSLContext.getInstance("TLSv1.2");  
-    
-    
-          c.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);  
-    
-    
-      
-    
-    
-          ConnectionFactory factory = new ConnectionFactory();  
-    
-    
-          factory.setHost("localhost");  
-    
-    
-          factory.setPort(5671);  
-    
-    
-          factory.useSslProtocol(c);  
-    
-    
-          factory.enableHostnameVerification();  
-    
-    
-      
-    
-    
-          Connection conn = factory.newConnection();  
-    
-    
-          Channel channel = conn.createChannel();  
-    
-    
-      
-    
-    
-          channel.queueDeclare("rabbitmq-java-test", false, true, true, null);  
-    
-    
-          channel.basicPublish("", "rabbitmq-java-test", null, "Hello, World".getBytes());  
-    
-    
-      
-    
-    
-          GetResponse chResponse = channel.basicGet("rabbitmq-java-test", false);  
-    
-    
-          if (chResponse == null) {  
-    
-    
-              System.out.println("No message retrieved");  
-    
-    
-          } else {  
-    
-    
-              byte[] body = chResponse.getBody();  
-    
-    
-              System.out.println("Received: " + new String(body));  
-    
-    
-          }  
-    
-    
-      
-    
-    
-          channel.close();  
-    
-    
-          conn.close();  
-    
-    
-      }  
-    
-    
-    }  
+
+首先初始化密钥管理器（客户端证书）与信任管理器（服务端证书）：
+
+```java
+// 1. 配置客户端密钥存储 (PKCS12)
+char[] keyPass = "MySecretPassword".toCharArray();
+KeyStore ks = KeyStore.getInstance("PKCS12");
+ks.load(new FileInputStream("/path/to/client_key.p12"), keyPass);
+KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+kmf.init(ks, keyPass);
+
+// 2. 配置受信任的服务端证书存储 (JKS)
+char[] trustPass = "rabbitstore".toCharArray();
+KeyStore tks = KeyStore.getInstance("JKS");
+tks.load(new FileInputStream("/path/to/trustStore"), trustPass);
+TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+tmf.init(tks);
+```
+
+然后初始化 SSLContext 并配置 `ConnectionFactory` 建立 TLS 安全连接：
+
+```java
+SSLContext c = SSLContext.getInstance("TLSv1.2");
+c.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+ConnectionFactory factory = new ConnectionFactory();
+factory.setHost("localhost");
+factory.setPort(5671);
+factory.useSslProtocol(c);
+factory.enableHostnameVerification();
+
+Connection conn = factory.newConnection();
+Channel channel = conn.createChannel();
+```
     
 
 为了确保上述代码在不受信任的证书下按预期工作，请使用未导入到密钥存储中的证书设置 RabbitMQ 节点，并观察连接失败。
@@ -893,121 +777,17 @@ Java 客户端中的所有 TLS 相关设置均通过 ConnectionFactory 进行配
 必须使用 `ConnectionFactory#enableHostnameVerification()` 方法单独启用主机名验证。例如，在上面的示例中就是这样做的：
     
     
-    import java.io.*;  
-    
-    
-    import java.security.*;  
-    
-    
-    import javax.net.ssl.*;  
-    
-    
-      
-    
-    
-    import com.rabbitmq.client.*;  
-    
-    
-      
-    
-    
-    public class Example2 {  
-    
-    
-      
-    
-    
-        public static void main(String[] args) throws Exception {  
-    
-    
-          char[] keyPassphrase = "MySecretPassword".toCharArray();  
-    
-    
-          KeyStore ks = KeyStore.getInstance("PKCS12");  
-    
-    
-          ks.load(new FileInputStream("/path/to/client_key.p12"), keyPassphrase);  
-    
-    
-      
-    
-    
-          KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");  
-    
-    
-          kmf.init(ks, keyPassphrase);  
-    
-    
-      
-    
-    
-          char[] trustPassphrase = "rabbitstore".toCharArray();  
-    
-    
-          KeyStore tks = KeyStore.getInstance("JKS");  
-    
-    
-          tks.load(new FileInputStream("/path/to/trustStore"), trustPassphrase);  
-    
-    
-      
-    
-    
-          TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");  
-    
-    
-          tmf.init(tks);  
-    
-    
-      
-    
-    
-          SSLContext c = SSLContext.getInstance("TLSv1.2");  
-    
-    
-          c.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);  
-    
-    
-      
-    
-    
-          ConnectionFactory factory = new ConnectionFactory();  
-    
-    
-          factory.setHost("localhost");  
-    
-    
-          factory.setPort(5671);  
-    
-    
-          factory.useSslProtocol(c);  
-    
-    
-          factory.enableHostnameVerification();  
-    
-    
-      
-    
-    
-          // this connection will both perform peer verification  
-    
-    
-          // and server hostname verification  
-    
-    
-          Connection conn = factory.newConnection();  
-    
-    
-      
-    
-    
-          // snip ...  
-    
-    
-      }  
-    
-    
-    }  
+```java
+ConnectionFactory factory = new ConnectionFactory();
+factory.setHost("localhost");
+factory.setPort(5671);
+factory.useSslProtocol(sslContext);
+
+// 显式启用服务器主机名验证
+factory.enableHostnameVerification();
+
+Connection conn = factory.newConnection();
+```  
     
 
 这将验证服务器证书是否是为客户端连接到的主机名颁发的。与证书链验证不同，此功能是特定于客户端的（通常不由服务器执行）。
@@ -1749,177 +1529,54 @@ RabbitMQ 节点和客户端使用的密码套件也可以通过公钥用法字�
 密码套件使用 `ssl_options.ciphers` 配置选项（在经典配置格式中为 `rabbit.ssl_options.ciphers`）进行配置。
 
 下面的示例演示了该选项的使用方式：
-    
-    
-    listeners.ssl.1 = 5671  
-    
-    
-      
-    
-    
-    ssl_options.cacertfile = /path/to/ca_certificate.pem  
-    
-    
-    ssl_options.certfile   = /path/to/server_certificate.pem  
-    
-    
-    ssl_options.keyfile    = /path/to/server_key.pem  
-    
-    
-    ssl_options.versions.1 = tlsv1.2  
-    
-    
-      
-    
-    
-    ssl_options.verify = verify_peer  
-    
-    
-    ssl_options.fail_if_no_peer_cert = false  
-    
-    
-      
-    
-    
-    ssl_options.ciphers.1  = ECDHE-ECDSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.2  = ECDHE-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.3  = ECDH-ECDSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.4  = ECDH-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.5  = DHE-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.6  = DHE-DSS-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.7  = ECDHE-ECDSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.8  = ECDHE-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.9  = ECDH-ECDSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.10 = ECDH-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.11 = DHE-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.12 = DHE-DSS-AES128-GCM-SHA256  
-    
-    
-      
-    
-    
-    # these MUST be disabled if TLSv1.3 is used  
-    
-    
-    ssl_options.honor_cipher_order = true  
-    
-    
-    ssl_options.honor_ecc_order    = true  
-    
+
+```ini
+listeners.ssl.1 = 5671
+
+ssl_options.cacertfile = /path/to/ca_certificate.pem
+ssl_options.certfile   = /path/to/server_certificate.pem
+ssl_options.keyfile    = /path/to/server_key.pem
+ssl_options.versions.1 = tlsv1.2
+
+ssl_options.verify = verify_peer
+ssl_options.fail_if_no_peer_cert = false
+
+# 密码套件按优先级排序配置
+ssl_options.ciphers.1  = ECDHE-ECDSA-AES256-GCM-SHA384
+ssl_options.ciphers.2  = ECDHE-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.3  = ECDH-ECDSA-AES256-GCM-SHA384
+ssl_options.ciphers.4  = ECDH-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.5  = DHE-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.6  = ECDHE-ECDSA-AES128-GCM-SHA256
+ssl_options.ciphers.7  = ECDHE-RSA-AES128-GCM-SHA256
+
+# 如果使用 TLSv1.3，以下选项必须禁用
+ssl_options.honor_cipher_order = true
+ssl_options.honor_ecc_order    = true
+```
 
 在经典配置格式中：
-    
-    
-    %% list allowed ciphers  
-    
-    
-    [  
-    
-    
-     {ssl, [{versions, ['tlsv1.2', 'tlsv1.1']}]},  
-    
-    
-     {rabbit, [  
-    
-    
-               {ssl_listeners, [5671]},  
-    
-    
-               {ssl_options, [{cacertfile,"/path/to/ca_certificate.pem"},  
-    
-    
-                              {certfile,  "/path/to/server_certificate.pem"},  
-    
-    
-                              {keyfile,   "/path/to/server_key.pem"},  
-    
-    
-                              {versions, ['tlsv1.2', 'tlsv1.1']},  
-    
-    
-                              %% This list is just an example!  
-    
-    
-                              %% Not all cipher suites are available on all machines.  
-    
-    
-                              %% Cipher suite order is important: preferred suites  
-    
-    
-                              %% should be listed first.  
-    
-    
-                              %% Different suites have different security and CPU load characteristics.  
-    
-    
-                              {ciphers,  [  
-    
-    
-                                "ECDHE-ECDSA-AES256-GCM-SHA384",  
-    
-    
-                                "ECDHE-RSA-AES256-GCM-SHA384",  
-    
-    
-                                "ECDH-ECDSA-AES256-GCM-SHA384",  
-    
-    
-                                "ECDH-RSA-AES256-GCM-SHA384",  
-    
-    
-                                "DHE-RSA-AES256-GCM-SHA384",  
-    
-    
-                                "DHE-DSS-AES256-GCM-SHA384",  
-    
-    
-                                "ECDHE-ECDSA-AES128-GCM-SHA256",  
-    
-    
-                                "ECDHE-RSA-AES128-GCM-SHA256",  
-    
-    
-                                "ECDH-ECDSA-AES128-GCM-SHA256",  
-    
-    
-                                "ECDH-RSA-AES128-GCM-SHA256",  
-    
-    
-                                "DHE-RSA-AES128-GCM-SHA256",  
-    
-    
-                                "DHE-DSS-AES128-GCM-SHA256"  
-    
-    
-                                ]}  
-    
-    
-                             ]}  
-    
-    
-              ]}  
+
+```erlang
+%% list allowed ciphers
+[
+ {ssl, [{versions, ['tlsv1.2', 'tlsv1.1']}]},
+ {rabbit, [
+           {ssl_listeners, [5671]},
+           {ssl_options, [{cacertfile,"/path/to/ca_certificate.pem"},
+                          {certfile,  "/path/to/server_certificate.pem"},
+                          {keyfile,   "/path/to/server_key.pem"},
+                          {versions, ['tlsv1.2', 'tlsv1.1']},
+                          {ciphers,  [
+                            "ECDHE-ECDSA-AES256-GCM-SHA384",
+                            "ECDHE-RSA-AES256-GCM-SHA384",
+                            "ECDHE-ECDSA-AES128-GCM-SHA256",
+                            "ECDHE-RSA-AES128-GCM-SHA256"
+                            ]}
+                         ]}
+          ]}
+].
+```  
     
     
     ].  
@@ -2035,1058 +1692,70 @@ BEAST 攻击是影响 TLSv1.0 的已知漏洞。要缓解它，请禁用 TLSv1.0
 
 ## 评估 TLS 设置安全性
 
-由于 TLS 有许多可配置参数，且由于历史原因其中一些参数具有次优的默认值，因此评估 TLS 设置安全性是一种推荐的做法。存在多种工具可以在启用 TLS 的服务器端点上执行各种测试，例如测试它是否容易受到 POODLE、BEAST 等已知攻击的影响。
+由于 TLS 有许多可配置参数，建议定期评估 TLS 设置的安全性。	estssl.sh 是一种常用的端点测试工具。
 
 ### testssl.sh
 
-testssl.sh 是一种成熟且功能广泛的 TLS 端点测试工具。它可以与不提供 HTTPS 的协议端点一起使用。
-
-该工具执行许多测试（例如，在某些机器上，仅密码套件测试就运行超过 350 次），并且并非每个环境都需要通过每一项测试。例如，许多生产部署不使用 CRL（证书撤销列表）；大多数开发环境使用自签名证书，无需担心启用最优化的密码套件集，依此类推。
-
-要运行 `testssl.sh`，请提供要测试的端点，格式为 `{hostname}:5671`：
-    
-    
-    ./testssl.sh localhost:5671  
-    
+使用方法：
+`ash
+./testssl.sh localhost:5671
+`
 
 ### 评估 TLS 1.3 设置
 
-以下接受 TLSv1.3 连接的配置示例在 Erlang 26 上通过了关键的 `testssl.sh` 测试：
-    
-    
-    listeners.ssl.1 = 5671  
-    
-    
-      
-    
-    
-    ssl_options.cacertfile = /path/to/ca_certificate.pem  
-    
-    
-    ssl_options.certfile   = /path/to/server_certificate.pem  
-    
-    
-    ssl_options.keyfile    = /path/to/server_key.pem  
-    
-    
-      
-    
-    
-    ssl_options.versions.1 = tlsv1.3  
-    
-    
-      
-    
-    
-    ssl_options.verify               = verify_peer  
-    
-    
-    ssl_options.fail_if_no_peer_cert = true  
-    
-    
-      
-    
-    
-    ssl_options.ciphers.1  = TLS_AES_256_GCM_SHA384  
-    
-    
-    ssl_options.ciphers.2  = TLS_AES_128_GCM_SHA256  
-    
-    
-    ssl_options.ciphers.3  = TLS_CHACHA20_POLY1305_SHA256  
-    
-    
-    ssl_options.ciphers.4  = TLS_AES_128_CCM_SHA256  
-    
-    
-    ssl_options.ciphers.5  = TLS_AES_128_CCM_8_SHA256  
-    
-    
-      
-    
-    
-    ssl_options.honor_cipher_order   = true  
-    
-    
-    ssl_options.honor_ecc_order      = true  
-    
+在 Erlang 26 下仅启用 TLSv1.3 的配置示例：
 
-这种 TLSv1.3 独占设置被报告为没有漏洞。
-    
-    
-      Using "OpenSSL 3.3.1 4 Jun 2024 (Library: OpenSSL 3.3.1 4 Jun 2024)" [~94 ciphers]  
-    
-    
-     on [redacted]:/opt/homebrew/bin/openssl  
-    
-    
-     (built: "Jun  4 12:53:04 2024", platform: "darwin64-arm64-cc")  
-    
-    
-      
-    
-    
-      
-    
-    
-     Start 2024-08-08 11:56:02                -->> 127.0.0.1:5671 (localhost) <<--  
-    
-    
-      
-    
-    
-     A record via:           /etc/hosts  
-    
-    
-     rDNS (127.0.0.1):       localhost.  
-    
-    
-     Service detected:       Couldn't determine what's running on port 5671, assuming no HTTP service => skipping all HTTP checks  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing protocols via sockets except NPN+ALPN  
-    
-    
-      
-    
-    
-     SSLv2      not offered (OK)  
-    
-    
-     SSLv3      not offered (OK)  
-    
-    
-     TLS 1      not offered  
-    
-    
-     TLS 1.1    not offered  
-    
-    
-     TLS 1.2    not offered  
-    
-    
-     TLS 1.3    offered (OK): final  
-    
-    
-     NPN/SPDY   not offered  
-    
-    
-     ALPN/HTTP2 not offered  
-    
-    
-      
-    
-    
-     Testing cipher categories  
-    
-    
-      
-    
-    
-     NULL ciphers (no encryption)                      not offered (OK)  
-    
-    
-     Anonymous NULL Ciphers (no authentication)        not offered (OK)  
-    
-    
-     Export ciphers (w/o ADH+NULL)                     not offered (OK)  
-    
-    
-     LOW: 64 Bit + DES, RC[2,4], MD5 (w/o export)      not offered (OK)  
-    
-    
-     Triple DES Ciphers / IDEA                         not offered  
-    
-    
-     Obsoleted CBC ciphers (AES, ARIA etc.)            not offered  
-    
-    
-     Strong encryption (AEAD ciphers) with no FS       not offered  
-    
-    
-     Forward Secrecy strong encryption (AEAD ciphers)  offered (OK)  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing server's cipher preferences  
-    
-    
-      
-    
-    
-    Hexcode  Cipher Suite Name (OpenSSL)       KeyExch.   Encryption  Bits     Cipher Suite Name (IANA/RFC)  
-    
-    
-    -----------------------------------------------------------------------------------------------------------------------------  
-    
-    
-    SSLv2  
-    
-    
-     -  
-    
-    
-    SSLv3  
-    
-    
-     -  
-    
-    
-    TLSv1  
-    
-    
-     -  
-    
-    
-    TLSv1.1  
-    
-    
-     -  
-    
-    
-    TLSv1.2  
-    
-    
-     -  
-    
-    
-    TLSv1.3 (listed by strength)  
-    
-    
-     x1302   TLS_AES_256_GCM_SHA384            ECDH 253   AESGCM      256      TLS_AES_256_GCM_SHA384  
-    
-    
-     x1303   TLS_CHACHA20_POLY1305_SHA256      ECDH 253   ChaCha20    256      TLS_CHACHA20_POLY1305_SHA256  
-    
-    
-     x1301   TLS_AES_128_GCM_SHA256            ECDH 253   AESGCM      128      TLS_AES_128_GCM_SHA256  
-    
-    
-     x1304   TLS_AES_128_CCM_SHA256            ECDH 253   AESCCM      128      TLS_AES_128_CCM_SHA256  
-    
-    
-     x1305   TLS_AES_128_CCM_8_SHA256          ECDH 253   AESCCM8     128      TLS_AES_128_CCM_8_SHA256  
-    
-    
-      
-    
-    
-     Has server cipher order?     no (TLS 1.3 only)  
-    
-    
-     (limited sense as client will pick)  
-    
-    
-      
-    
-    
-     Testing robust forward secrecy (FS) -- omitting Null Authentication/Encryption, 3DES, RC4  
-    
-    
-      
-    
-    
-     FS is offered (OK)           TLS_AES_256_GCM_SHA384 TLS_CHACHA20_POLY1305_SHA256 TLS_AES_128_GCM_SHA256 TLS_AES_128_CCM_SHA256 TLS_AES_128_CCM_8_SHA256  
-    
-    
-     Elliptic curves offered:     prime256v1 secp384r1 X25519 X448  
-    
-    
-     TLS 1.3 sig_algs offered:    RSA-PSS-RSAE+SHA256 RSA-PSS-RSAE+SHA384 RSA-PSS-RSAE+SHA512  
-    
-    
-      
-    
-    
-     Testing server defaults (Server Hello)  
-    
-    
-      
-    
-    
-     TLS extensions (standard)    "key share/#51" "supported versions/#43" "signature algorithms/#13" "certificate authorities/#47"  
-    
-    
-     Session Ticket RFC 5077 hint no -- no lifetime advertised  
-    
-    
-     SSL Session ID support       no  
-    
-    
-     Session Resumption           Tickets no, ID: no  
-    
-    
-     TLS clock skew               Random values, no fingerprinting possible  
-    
-    
-     Certificate Compression      none  
-    
-    
-     Client Authentication        optional  
-    
-    
-     CA List for Client Auth      L=$$$$,CN=TLSGenSelfSignedtRootCA 2022-03-22T11:27:45.010198  
-    
-    
-     Signature Algorithm          SHA256 with RSA  
-    
-    
-     Server key size              RSA 2048 bits (exponent is 65537)  
-    
-    
-     Server key usage             Digital Signature, Key Encipherment  
-    
-    
-     Server extended key usage    TLS Web Server Authentication  
-    
-    
-     Serial                       01 (OK: length 1)  
-    
-    
-     Fingerprints                 SHA1 A4346FA6FDC61FCD4C0199EA14B8AE0F5D5121B1  
-    
-    
-                                  SHA256 C81025DA6F9BB646239659420D58E73F62CEB7D2AD5AC13FF12A9DE057394953  
-    
-    
-     Common Name (CN)             [redacted]  
-    
-    
-     subjectAltName (SAN)         [redacted] localhost  
-    
-    
-     Trust (hostname)             Ok via SAN (same w/o SNI)  
-    
-    
-     Chain of trust               NOT ok (self signed CA in chain)  
-    
-    
-     EV cert (experimental)       no  
-    
-    
-     Certificate Validity (UTC)   2779 >= 60 days (2022-03-22 07:27 --> 2032-03-19 07:27)  
-    
-    
-                                  >= 10 years is way too long  
-    
-    
-     ETS/"eTLS", visibility info  not present  
-    
-    
-     Certificate Revocation List  --  
-    
-    
-     OCSP URI                     --  
-    
-    
-                                  NOT ok -- neither CRL nor OCSP URI provided  
-    
-    
-     OCSP stapling                not offered  
-    
-    
-     OCSP must staple extension   --  
-    
-    
-     DNS CAA RR (experimental)    not offered  
-    
-    
-     Certificate Transparency     N/A  
-    
-    
-     Certificates provided        2  
-    
-    
-     Issuer                       TLSGenSelfSignedtRootCA 2022-03-22T11:27:45.010198  
-    
-    
-     Intermediate cert validity   #1: ok > 40 days (2032-03-19 07:27). $$$$ <-- $$$$  
-    
-    
-     Intermediate Bad OCSP (exp.) Ok  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing vulnerabilities  
-    
-    
-      
-    
-    
-     Heartbleed (CVE-2014-0160)                not vulnerable (OK), no heartbeat extension  
-    
-    
-     CCS (CVE-2014-0224)                       not vulnerable (OK)  
-    
-    
-     Ticketbleed (CVE-2016-9244), experiment.  (applicable only for HTTPS)  
-    
-    
-     ROBOT                                     Server does not support any cipher suites that use RSA key transport  
-    
-    
-     Secure Renegotiation (RFC 5746)           not vulnerable (OK)  
-    
-    
-     Secure Client-Initiated Renegotiation     not vulnerable (OK)  
-    
-    
-     CRIME, TLS (CVE-2012-4929)                not vulnerable (OK)  
-    
-    
-     POODLE, SSL (CVE-2014-3566)               not vulnerable (OK), no SSLv3 support  
-    
-    
-     TLS_FALLBACK_SCSV (RFC 7507)              No fallback possible (OK), TLS 1.3 is the only protocol  
-    
-    
-     SWEET32 (CVE-2016-2183, CVE-2016-6329)    not vulnerable (OK)  
-    
-    
-     FREAK (CVE-2015-0204)                     not vulnerable (OK)  
-    
-    
-     DROWN (CVE-2016-0800, CVE-2016-0703)      not vulnerable on this host and port (OK)  
-    
-    
-                                               make sure you don't use this certificate elsewhere with SSLv2 enabled services, see  
-    
-    
-                                               https://search.censys.io/search?resource=hosts&virtual_hosts=INCLUDE&q=C81025DA6F9BB646239659420D58E73F62CEB7D2AD5AC13FF12A9DE057394953  
-    
-    
-     LOGJAM (CVE-2015-4000), experimental      not vulnerable (OK): no DH EXPORT ciphers, no DH key detected with <= TLS 1.2  
-    
-    
-     BEAST (CVE-2011-3389)                     not vulnerable (OK), no SSL3 or TLS1  
-    
-    
-     LUCKY13 (CVE-2013-0169), experimental     not vulnerable (OK)  
-    
-    
-     Winshock (CVE-2014-6321), experimental    not vulnerable (OK)  
-    
-    
-     RC4 (CVE-2013-2566, CVE-2015-2808)        not vulnerable (OK)  
-    
-    
-      
-    
-    
-    Could not determine the protocol, only simulating generic clients.  
-    
-    
-      
-    
-    
-     Running client simulations via sockets  
-    
-    
-      
-    
-    
-     Browser                      Protocol  Cipher Suite Name (OpenSSL)       Forward Secrecy  
-    
-    
-    ------------------------------------------------------------------------------------------------  
-    
-    
-     Android 8.1 (native)         No connection  
-    
-    
-     Android 9.0 (native)         TLSv1.3   TLS_AES_128_GCM_SHA256            253 bit ECDH (X25519)  
-    
-    
-     Android 10.0 (native)        TLSv1.3   TLS_AES_128_GCM_SHA256            253 bit ECDH (X25519)  
-    
-    
-     Android 11 (native)          TLSv1.3   TLS_AES_128_GCM_SHA256            253 bit ECDH (X25519)  
-    
-    
-     Android 12 (native)          TLSv1.3   TLS_AES_128_GCM_SHA256            253 bit ECDH (X25519)  
-    
-    
-     Java 7u25                    No connection  
-    
-    
-     Java 8u161                   No connection  
-    
-    
-     Java 11.0.2 (OpenJDK)        TLSv1.3   TLS_AES_128_GCM_SHA256            256 bit ECDH (P-256)  
-    
-    
-     Java 17.0.3 (OpenJDK)        TLSv1.3   TLS_AES_256_GCM_SHA384            253 bit ECDH (X25519)  
-    
-    
-     go 1.17.8                    TLSv1.3   TLS_AES_128_GCM_SHA256            253 bit ECDH (X25519)  
-    
-    
-     LibreSSL 2.8.3 (Apple)       No connection  
-    
-    
-     OpenSSL 1.0.2e               No connection  
-    
-    
-     OpenSSL 1.1.0l (Debian)      No connection  
-    
-    
-     OpenSSL 1.1.1d (Debian)      TLSv1.3   TLS_AES_256_GCM_SHA384            253 bit ECDH (X25519)  
-    
-    
-     OpenSSL 3.0.3 (git)          TLSv1.3   TLS_AES_256_GCM_SHA384            253 bit ECDH (X25519)  
-    
+`ini
+listeners.ssl.1 = 5671
+ssl_options.cacertfile = /path/to/ca_certificate.pem
+ssl_options.certfile   = /path/to/server_certificate.pem
+ssl_options.keyfile    = /path/to/server_key.pem
+ssl_options.versions.1 = tlsv1.3
+
+ssl_options.verify               = verify_peer
+ssl_options.fail_if_no_peer_cert = true
+
+ssl_options.ciphers.1  = TLS_AES_256_GCM_SHA384
+ssl_options.ciphers.2  = TLS_AES_128_GCM_SHA256
+ssl_options.ciphers.3  = TLS_CHACHA20_POLY1305_SHA256
+ssl_options.ciphers.4  = TLS_AES_128_CCM_SHA256
+ssl_options.ciphers.5  = TLS_AES_128_CCM_8_SHA256
+
+ssl_options.honor_cipher_order   = true
+ssl_options.honor_ecc_order      = true
+`
+
+测试结果表明该配置对常见漏洞（Heartbleed, POODLE, BEAST 等）均免疫，并提供前向安全性。
 
 ### 使用受限密码套件评估 TLS 1.2 设置
 
-以下接受 TLSv1.2 连接的配置示例在 Erlang 26.2 上通过了关键的 `testssl.sh` 测试：
-    
-    
-    listeners.ssl.default  = 5671  
-    
-    
-    ssl_options.cacertfile = /path/to/ca_certificate.pem  
-    
-    
-    ssl_options.certfile   = /path/to/server_certificate.pem  
-    
-    
-    ssl_options.keyfile    = /path/to/server_key.pem  
-    
-    
-    ssl_options.versions.1 = tlsv1.2  
-    
-    
-      
-    
-    
-    ssl_options.verify               = verify_peer  
-    
-    
-    ssl_options.fail_if_no_peer_cert = false  
-    
-    
-      
-    
-    
-    ssl_options.honor_cipher_order   = true  
-    
-    
-    ssl_options.honor_ecc_order      = true  
-    
-    
-      
-    
-    
-    # These are highly recommended for TLSv1.2 but cannot be used  
-    
-    
-    # with TLSv1.3. If TLSv1.3 is enabled, these lines MUST be removed.  
-    
-    
-    ssl_options.client_renegotiation = false  
-    
-    
-    ssl_options.secure_renegotiate   = true  
-    
-    
-      
-    
-    
-    ssl_options.ciphers.1  = ECDHE-ECDSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.2  = ECDHE-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.3  = ECDH-ECDSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.4  = ECDH-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.5  = DHE-RSA-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.6  = DHE-DSS-AES256-GCM-SHA384  
-    
-    
-    ssl_options.ciphers.7  = ECDHE-ECDSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.8  = ECDHE-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.9  = ECDH-ECDSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.10 = ECDH-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.11 = DHE-RSA-AES128-GCM-SHA256  
-    
-    
-    ssl_options.ciphers.12 = DHE-DSS-AES128-GCM-SHA256  
-    
+TLSv1.2 安全加固配置示例：
 
-这种启用了 TLSv1.2 的设置被报告为对一组已知的高调漏洞没有漏洞。
-    
-    
-     Using "OpenSSL 3.3.1 4 Jun 2024 (Library: OpenSSL 3.3.1 4 Jun 2024)" [~94 ciphers]  
-    
-    
-     on [redacted]:/opt/homebrew/bin/openssl  
-    
-    
-     (built: "Jun  4 12:53:04 2024", platform: "darwin64-arm64-cc")  
-    
-    
-      
-    
-    
-      
-    
-    
-     Start 2024-08-08 13:42:36                -->> 127.0.0.1:5671 (localhost) <<--  
-    
-    
-      
-    
-    
-     A record via:           /etc/hosts  
-    
-    
-     rDNS (127.0.0.1):       localhost.  
-    
-    
-     Service detected:       certificate-based authentication without providing client certificate and private key => skipping all HTTP checks  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing protocols via sockets except NPN+ALPN  
-    
-    
-      
-    
-    
-     SSLv2      not offered (OK)  
-    
-    
-     SSLv3      not offered (OK)  
-    
-    
-     TLS 1      not offered  
-    
-    
-     TLS 1.1    not offered  
-    
-    
-     TLS 1.2    offered (OK)  
-    
-    
-     TLS 1.3    not offered and downgraded to a weaker protocol  
-    
-    
-     NPN/SPDY   not offered  
-    
-    
-     ALPN/HTTP2 not offered  
-    
-    
-      
-    
-    
-     Testing cipher categories  
-    
-    
-      
-    
-    
-     NULL ciphers (no encryption)                      not offered (OK)  
-    
-    
-     Anonymous NULL Ciphers (no authentication)        not offered (OK)  
-    
-    
-     Export ciphers (w/o ADH+NULL)                     not offered (OK)  
-    
-    
-     LOW: 64 Bit + DES, RC[2,4], MD5 (w/o export)      not offered (OK)  
-    
-    
-     Triple DES Ciphers / IDEA                         not offered  
-    
-    
-     Obsoleted CBC ciphers (AES, ARIA etc.)            not offered  
-    
-    
-     Strong encryption (AEAD ciphers) with no FS       not offered  
-    
-    
-     Forward Secrecy strong encryption (AEAD ciphers)  offered (OK)  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing server's cipher preferences  
-    
-    
-      
-    
-    
-    Hexcode  Cipher Suite Name (OpenSSL)       KeyExch.   Encryption  Bits     Cipher Suite Name (IANA/RFC)  
-    
-    
-    -----------------------------------------------------------------------------------------------------------------------------  
-    
-    
-    SSLv2  
-    
-    
-     -  
-    
-    
-    SSLv3  
-    
-    
-     -  
-    
-    
-    TLSv1  
-    
-    
-     -  
-    
-    
-    TLSv1.1  
-    
-    
-     -  
-    
-    
-    TLSv1.2 (server order)  
-    
-    
-     xc030   ECDHE-RSA-AES256-GCM-SHA384       ECDH 253   AESGCM      256      TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384  
-    
-    
-     x9f     DHE-RSA-AES256-GCM-SHA384         DH 2048    AESGCM      256      TLS_DHE_RSA_WITH_AES_256_GCM_SHA384  
-    
-    
-     xc02f   ECDHE-RSA-AES128-GCM-SHA256       ECDH 253   AESGCM      128      TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256  
-    
-    
-     x9e     DHE-RSA-AES128-GCM-SHA256         DH 2048    AESGCM      128      TLS_DHE_RSA_WITH_AES_128_GCM_SHA256  
-    
-    
-    TLSv1.3  
-    
-    
-     -  
-    
-    
-      
-    
-    
-     Has server cipher order?     yes (OK)  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing robust forward secrecy (FS) -- omitting Null Authentication/Encryption, 3DES, RC4  
-    
-    
-      
-    
-    
-     FS is offered (OK)           ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-RSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256  
-    
-    
-     Elliptic curves offered:     prime256v1 secp384r1 secp521r1 brainpoolP256r1 brainpoolP384r1 brainpoolP512r1 X25519 X448  
-    
-    
-     DH group offered:            RFC3526/Oakley Group 14 (2048 bits)  
-    
-    
-     TLS 1.2 sig_algs offered:    RSA+SHA256 RSA+SHA384 RSA+SHA512 RSA-PSS-RSAE+SHA256  
-    
-    
-      
-    
-    
-     Testing server defaults (Server Hello)  
-    
-    
-      
-    
-    
-     TLS extensions (standard)    "renegotiation info/#65281" "EC point formats/#11" "max fragment length/#1"  
-    
-    
-     Session Ticket RFC 5077 hint no -- no lifetime advertised  
-    
-    
-     SSL Session ID support       yes  
-    
-    
-     Session Resumption           Tickets no, Client Auth: ID resumption test not supported  
-    
-    
-     TLS clock skew               -1 sec from localtime  
-    
-    
-     Client Authentication        required  
-    
-    
-     CA List for Client Auth      L=$$$$,CN=TLSGenSelfSignedtRootCA 2022-03-22T11:27:45.010198  
-    
-    
-     Signature Algorithm          SHA256 with RSA  
-    
-    
-     Server key size              RSA 2048 bits (exponent is 65537)  
-    
-    
-     Server key usage             Digital Signature, Key Encipherment  
-    
-    
-     Server extended key usage    TLS Web Server Authentication  
-    
-    
-     Serial                       01 (OK: length 1)  
-    
-    
-     Fingerprints                 SHA1 A4346FA6FDC61FCD4C0199EA14B8AE0F5D5121B1  
-    
-    
-                                  SHA256 C81025DA6F9BB646239659420D58E73F62CEB7D2AD5AC13FF12A9DE057394953  
-    
-    
-     Common Name (CN)             [redacted]  
-    
-    
-     subjectAltName (SAN)         [redacted] localhost  
-    
-    
-     Trust (hostname)             Ok via SAN (same w/o SNI)  
-    
-    
-     Chain of trust               NOT ok (self signed CA in chain)  
-    
-    
-     EV cert (experimental)       no  
-    
-    
-     Certificate Validity (UTC)   2779 >= 60 days (2022-03-22 07:27 --> 2032-03-19 07:27)  
-    
-    
-                                  >= 10 years is way too long  
-    
-    
-     ETS/"eTLS", visibility info  not present  
-    
-    
-     Certificate Revocation List  --  
-    
-    
-     OCSP URI                     --  
-    
-    
-                                  NOT ok -- neither CRL nor OCSP URI provided  
-    
-    
-     OCSP stapling                not offered  
-    
-    
-     OCSP must staple extension   --  
-    
-    
-     DNS CAA RR (experimental)    not offered  
-    
-    
-     Certificate Transparency     --  
-    
-    
-     Certificates provided        2  
-    
-    
-     Issuer                       TLSGenSelfSignedtRootCA 2022-03-22T11:27:45.010198  
-    
-    
-     Intermediate cert validity   #1: ok > 40 days (2032-03-19 07:27). $$$$ <-- $$$$  
-    
-    
-     Intermediate Bad OCSP (exp.) Ok  
-    
-    
-      
-    
-    
-      
-    
-    
-     Testing vulnerabilities  
-    
-    
-      
-    
-    
-     Heartbleed (CVE-2014-0160)                not vulnerable (OK), no heartbeat extension  
-    
-    
-     CCS (CVE-2014-0224)                       not vulnerable (OK)  
-    
-    
-     Ticketbleed (CVE-2016-9244), experiment.  not vulnerable (OK), no session ticket extension  
-    
-    
-     ROBOT                                     Server does not support any cipher suites that use RSA key transport  
-    
-    
-     Secure Renegotiation (RFC 5746)           supported (OK)  
-    
-    
-     Secure Client-Initiated Renegotiation     not having provided client certificate and private key file, the client x509-based authentication prevents this from being tested  
-    
-    
-     CRIME, TLS (CVE-2012-4929)                not vulnerable (OK)  
-    
-    
-     BREACH (CVE-2013-3587)                    not having provided client certificate and private key file, the client x509-based authentication prevents this from being tested  
-    
-    
-     POODLE, SSL (CVE-2014-3566)               not vulnerable (OK), no SSLv3 support  
-    
-    
-     TLS_FALLBACK_SCSV (RFC 7507)              No fallback possible (OK), no protocol below TLS 1.2 offered  
-    
-    
-     SWEET32 (CVE-2016-2183, CVE-2016-6329)    not vulnerable (OK)  
-    
-    
-     FREAK (CVE-2015-0204)                     not vulnerable (OK)  
-    
-    
-     DROWN (CVE-2016-0800, CVE-2016-0703)      not vulnerable on this host and port (OK)  
-    
-    
-                                               make sure you don't use this certificate elsewhere with SSLv2 enabled services, see  
-    
-    
-                                               https://search.censys.io/search?resource=hosts&virtual_hosts=INCLUDE&q=C81025DA6F9BB646239659420D58E73F62CEB7D2AD5AC13FF12A9DE057394953  
-    
-    
-     LOGJAM (CVE-2015-4000), experimental      common prime with 2048 bits detected: RFC3526/Oakley Group 14 (2048 bits),  
-    
-    
-                                               but no DH EXPORT ciphers  
-    
-    
-     BEAST (CVE-2011-3389)                     not vulnerable (OK), no SSL3 or TLS1  
-    
-    
-     LUCKY13 (CVE-2013-0169), experimental     not vulnerable (OK)  
-    
-    
-     Winshock (CVE-2014-6321), experimental    not vulnerable (OK) - CAMELLIA or ECDHE_RSA GCM ciphers found  
-    
-    
-     RC4 (CVE-2013-2566, CVE-2015-2808)        no RC4 ciphers detected (OK)  
-    
-    
-      
-    
-    
-    Could not determine the protocol, only simulating generic clients.  
-    
-    
-      
-    
-    
-     Running client simulations via sockets  
-    
-    
-      
-    
-    
-     Browser                      Protocol  Cipher Suite Name (OpenSSL)       Forward Secrecy  
-    
-    
-    ------------------------------------------------------------------------------------------------  
-    
-    
-     Android 8.1 (native)         TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     Android 9.0 (native)         TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     Android 10.0 (native)        TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     Android 11 (native)          TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     Android 12 (native)          TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     Java 7u25                    No connection  
-    
-    
-     Java 8u161                   TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       521 bit ECDH (P-521)  
-    
-    
-     Java 11.0.2 (OpenJDK)        TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       521 bit ECDH (P-521)  
-    
-    
-     Java 17.0.3 (OpenJDK)        TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     go 1.17.8                    TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     LibreSSL 2.8.3 (Apple)       TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     OpenSSL 1.0.2e               TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       521 bit ECDH (P-521)  
-    
-    
-     OpenSSL 1.1.0l (Debian)      TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     OpenSSL 1.1.1d (Debian)      TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
-    
-     OpenSSL 3.0.3 (git)          TLSv1.2   ECDHE-RSA-AES256-GCM-SHA384       253 bit ECDH (X25519)  
-    
+`ini
+listeners.ssl.default  = 5671
+ssl_options.cacertfile = /path/to/ca_certificate.pem
+ssl_options.certfile   = /path/to/server_certificate.pem
+ssl_options.keyfile    = /path/to/server_key.pem
+ssl_options.versions.1 = tlsv1.2
+
+ssl_options.verify               = verify_peer
+ssl_options.fail_if_no_peer_cert = false
+ssl_options.honor_cipher_order   = true
+ssl_options.honor_ecc_order      = true
+
+ssl_options.client_renegotiation = false
+ssl_options.secure_renegotiate   = true
+
+ssl_options.ciphers.1  = ECDHE-ECDSA-AES256-GCM-SHA384
+ssl_options.ciphers.2  = ECDHE-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.3  = ECDH-ECDSA-AES256-GCM-SHA384
+ssl_options.ciphers.4  = ECDH-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.5  = DHE-RSA-AES256-GCM-SHA384
+ssl_options.ciphers.6  = ECDHE-ECDSA-AES128-GCM-SHA256
+ssl_options.ciphers.7  = ECDHE-RSA-AES128-GCM-SHA256
+`
+
+该设置在 Erlang 26.2 上通过了 	estssl.sh 测试，无已知高危漏洞。
 
 ## TLS 证书和私钥轮换
 
