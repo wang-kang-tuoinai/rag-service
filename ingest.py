@@ -154,7 +154,8 @@ def sync_collection(collection, parents, chunks, embeddings, db_path, batch_size
         snapshot = snapshot_dir / f"{snapshot_id}.json"
         if not snapshot.exists():
             temporary = snapshot.with_suffix(".tmp")
-            temporary.write_text(payload, encoding="utf-8")
+            # Windows 上 write_text 默认把 \n 转成 \r\n，会导致文件哈希与 snapshot_id（按 LF 计算）不一致；显式指定 LF。
+            temporary.write_text(payload, encoding="utf-8", newline="\n")
             temporary.replace(snapshot)
     ids = [c["id"] for c in chunks]
     # 小规模全量同步：写入成功后才删除已消失的章节，不触碰 go_docs。
