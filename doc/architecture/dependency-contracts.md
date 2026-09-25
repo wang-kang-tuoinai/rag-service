@@ -29,5 +29,11 @@ Routing key 为 user.register，消费者队列名 email-service，durable=true�
 ## 发布与消费边界
 Publisher 使用互斥锁串行发布，创建 500ms context 传给 PublishWithContext；不能据此保证整个发布操作严格在 500ms 结束（包括等待锁和客户端实际行为）。
 当前未开启 publisher confirms，mandatory=false，Publishing 未设置持久化 DeliveryMode。调用无错误不能证明已持久化、已路由或已消费，持久队列不等于消息可靠投递承诺。
-发布失败不回滚用户创建，未见 outbox 或自动补发逻辑。Publisher 未实现断线后的连接/Channel 重建。
-消费者手动 Ack；JSON 解析失败 Nack(requeue=false)，回调失败 Nack(requeue=true)，无次数上限；当前回调只打印并成功返回。Channel 关闭后消费循环退出，未自动恢复订阅。
+发布失败不回滚用户创建，未见 outbox 或自动补发逻辑。检测到连接不可用后，发布返回错误，不等待后台重连；连接恢复仅使后续发布可以继续，不会自动补发此前失败或结果不确定的消息。
+消费者手动 Ack；JSON 解析失败 Nack(requeue=false)，回调失败 Nack(requeue=true)，无次数上限；当前回调只打印并成功返回。Ack/Nack 失败会退出当前消费循环并进入恢复流程。未确认的消费可能重新投递，业务处理仍需考虑幂等。
+
+## RabbitMQ 断线恢复契约
+发布者和消费者各自管理连接，运行期间监听 Connection、Channel 关闭；消费者还监听订阅取消和消息流关闭。可恢复故障触发后台重连，间隔依次为 1、2、4、8、16、30 秒，此后保持 30 秒，恢复成功后重置退避间隔。恢复时间还包含故障检测、连接建立和拓扑声明耗时，30 秒不是恢复总耗时上限。
+每次恢复都会重新建立 Connection、Channel 并声明 Exchange；消费者还会重新声明 Queue、Binding 并订阅。每个 Consumer 管理一个订阅，上一代消费循环退出后才开始下一代。
+权限、声明参数冲突等被判定为不可恢复的服务端配置/协议错误会停止重试，需人工修正配置后重启对应服务。应用退出时停止重连并关闭连接，不会因主动关闭再次重连。
+连接中断、重连失败、连接及拓扑恢复成功日志输出到 app/consumer stdout；当前观测工具不能直接读取这些日志或确认消费恢复，需人工补充检查。看到恢复日志也不能证明此前发布失败的消息已补齐或所有消息已消费。
