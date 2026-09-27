@@ -17,7 +17,7 @@ GORM 开启 TranslateError，重复键转换 ErrDuplicateUser → 409、INFO `du
 
 ## Agent 可执行的只读验证
 1. search_logs 查看具体 access attrs.status 与业务模板，不仅看 ERROR。
-2. query_trace_stats 的 ok 包含根 4xx；已知 Trace 直接 get_trace_detail，检查 user.duplicate、user.isExist 等属性。
+2. 4xx 不再直接判为 ok：只排除已确认的 MySQL 重复键业务冲突，同一请求的 Redis 超时等其他异常仍参与分类。已知 Trace 直接 get_trace_detail，检查 user.duplicate、user.isExist，以及数据库节点的 expected_error；原始重复键错误仍保留。
 3. 布隆拦截时可能没有 Redis/MySQL 查询；检查输入是否规范十进制 ID。
 4. 查询同窗口是否还有真正 500，不把客户端冲突和服务端故障合并统计。
 
