@@ -5,7 +5,7 @@ project: ops-agent
 service: ops-agent-backend
 component: observability
 deployment: docker-compose
-reviewed_at: "2026-09-26"
+reviewed_at: "2026-09-28"
 verification: source_review_only
 ---
 
@@ -19,7 +19,7 @@ templates 的 sample 是代表性样例，不证明其他请求均有相同根�
 Recorder 使用请求 context 同步写 obs-mysql；写失败仅打印 record event failed。请求超时或观测库故障可能造成日志缺失，写日志本身也可能增加请求耗时。
 
 ## Trace
-query_trace_stats：候选按指定服务的唯一 server 根入口过滤，再按 service/operation 聚合。默认入口由 TRACE_ENTRY_SERVICE 配置，初始为 ops-agent-backend，也可传 service 覆盖。downstream_error_services 按入口请求去重汇总下游有效错误服务，不代表根因或下游自身错误率；跨服务不可相加。百分位仅针对本次样本。
+query_trace_stats：候选按指定服务的 server 入口过滤，再按 service/operation 聚合，范围为入口及其后代，不包含上游或旁支。多根、缺失上游时仍统计已识别入口并提示不完整。total_calls 按 (trace_id, entry_span_id) 计数，meta.fetched_traces 表示候选 Trace 数；同一 Trace 可有多次入口调用。默认单个服务由 TRACE_ENTRY_SERVICE 配置，初始为 ops-agent-backend，可传 service 覆盖。downstream_error_services 按每次入口调用去重汇总下游有效错误服务，不代表根因或下游自身错误率；跨服务不可相加。百分位仅针对本次样本。
 search_traces：指定服务自己的 server 入口、耗时、状态筛选，不要求全局根；min_duration_ms 下推 Jaeger 后再按目标入口验证。每行以 trace_id+entry_span_id 区分。fetched_count 是 Trace 数，matched_count/returned_count 是入口调用数；不受上游或兄弟分支错误影响。
 get_trace_detail：按 trace_id 展示全局树及缺少父节点的 fragments，默认 50 节点，上限 200，共享预算；truncated/incomplete/warnings 提醒裁剪和结构缺失。各节点 status_desc 与 error 分别保留。
 
