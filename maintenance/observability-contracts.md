@@ -5,7 +5,7 @@ project: ops-agent
 service: ops-agent-backend
 component: observability
 deployment: docker-compose
-reviewed_at: "2026-09-28"
+reviewed_at: "2026-09-29"
 verification: source_review_only
 ---
 
@@ -13,6 +13,8 @@ verification: source_review_only
 
 ## 日志
 query_log_stats → query_log_templates → search_logs，已有 trace_id 时直接查询关联日志。
+stats 不传 service 时按服务分别返回 summaries，传 service 也返回数组；window 位于顶层。仅包含窗口内有匹配日志的服务，空数组不代表健康或完整服务清单。每项有 service/total/error_count/error_rate/by_level，按 ERROR 数、WARN 数降序排列；level/top_n 已移除，不返回 top_templates。route/method 会限制统计范围。
+templates 必须指定 service；未知服务时先查 stats。返回 service/items/has_more，超过 limit 时提示截断；可以提高 limit（最多 500）或缩小筛选范围，无模板游标。按 (template, level) 分组，返回组的 count 仍统计完整匹配窗口。search 的 service 仍为可选。
 日志来自显式 Recorder 调用，不是 stdout 全量采集。ERROR 占比是日志条数占比，不是请求失败率；一个 500 可能有业务 ERROR 和 access ERROR，不能简单除以二还原。
 当前 access middleware 的实际分支是 5xx 为 ERROR，其他为 INFO（包括 4xx），以代码为准，不采用旧注释的 4xx WARN。
 templates 的 sample 是代表性样例，不证明其他请求均有相同根因。attrs.err 才可能包含具体异常。
