@@ -28,7 +28,7 @@ env/
 
 # Runtime / generated data
 my_chroma_data/
-conversations/
+tests/
 docs/go-official/
 
 # IDE / editor
